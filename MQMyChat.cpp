@@ -453,6 +453,22 @@ void MyChatEngine::RouteToChannel(int channelId, int eventIndex, const char* lin
 	if (hasNonDefaultFilters && !matched)
 		return;
 
+	if (ci_equals(channel.name, "consider") && pTarget)
+	{
+		int conVal = ConColor(pTarget);
+		switch (conVal)
+		{
+		case CONCOLOR_GREY:      outputColor = MQColor(153, 153, 153); break;
+		case CONCOLOR_GREEN:     outputColor = MQColor(0, 255, 0); break;
+		case CONCOLOR_LIGHTBLUE: outputColor = MQColor(94, 180, 255); break;
+		case CONCOLOR_BLUE:      outputColor = MQColor(0, 0, 255); break;
+		case CONCOLOR_WHITE:     outputColor = MQColor(255, 255, 255); break;
+		case CONCOLOR_YELLOW:    outputColor = MQColor(255, 255, 0); break;
+		case CONCOLOR_RED:       outputColor = MQColor(230, 26, 26); break;
+		default: break;
+		}
+	}
+
 	if (channel.console)
 		channel.console->AppendText(line, outputColor, true);
 
