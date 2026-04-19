@@ -564,6 +564,31 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     newFilter.filterIndex = static_cast<int>(evt.filters.size());
                     evt.filters.push_back(newFilter);
                 }
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("You can add TOKENs to your filters in place of character names.");
+                    ImGui::Separator();
+                    ImGui::Text("LIST OF TOKENS");
+                    ImGui::BulletText("M3        Your Name");
+                    ImGui::BulletText("M1        Main Assist Name");
+                    ImGui::BulletText("PT1       Your Pet Name");
+                    ImGui::BulletText("PT3       Any Group Member's Pet Name");
+                    ImGui::BulletText("GP1       Party Member's Name");
+                    ImGui::BulletText("TK1       Main Tank Name");
+                    ImGui::BulletText("RL        Raid Leader Name");
+                    ImGui::BulletText("H1        Group Healer (DRU, CLR, or SHM)");
+                    ImGui::BulletText("G1 - G5   Party Member in Group Slot 1-5");
+                    ImGui::BulletText("N3        NPC Name");
+                    ImGui::BulletText("P3        PC Name");
+                    ImGui::Separator();
+                    ImGui::Text("PREFIX MODIFIERS");
+                    ImGui::BulletText("NO2       Invert match. Place before a token or word\n          to exclude lines that match.");
+                    ImGui::BulletText("^         Anchor to start of line.");
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Lua patterns supported: %%d %%a %%] etc.");
+                    ImGui::EndTooltip();
+                }
 
                 ImGui::Unindent();
             }

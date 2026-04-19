@@ -815,7 +815,10 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		if (!npcName.empty())
 		{
 			bool tagged = false;
-			PlayerClient* pSpawn = GetSpawnByName(npcName.c_str());
+			std::string petSearch = npcName;
+			for (char& c : petSearch)
+				if (c == ' ') c = '_';
+			PlayerClient* pSpawn = GetSpawnByPartialName(petSearch.c_str());
 			if (pSpawn && pSpawn->MasterID > 0)
 			{
 				PlayerClient* pMaster = GetSpawnByID(pSpawn->MasterID);
