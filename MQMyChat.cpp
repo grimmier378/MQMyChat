@@ -230,6 +230,17 @@ void MyChatEngine::Initialize()
 	dbPath = fmt::format("{}\\MyChat.db", gPathResources);
 	std::filesystem::path dbDir = std::filesystem::path(dbPath).parent_path();
 	std::filesystem::create_directories(dbDir);
+
+	if (!std::filesystem::exists(dbPath))
+	{
+		std::string luaDbPath = fmt::format("{}\\MyUI\\MyChat\\MyChat.db", gPathConfig);
+		if (std::filesystem::exists(luaDbPath))
+		{
+			std::filesystem::copy_file(luaDbPath, dbPath);
+			WriteChatf("\at[MQMyChat]\ax Migrated database from Lua MyChat: %s", luaDbPath.c_str());
+		}
+	}
+
 	database->Open(dbPath);
 	database->InitSchema();
 	mainConsole = mq::imgui::ConsoleWidget::Create("MQMyChat##MainConsole");
@@ -432,9 +443,9 @@ void MyChatEngine::ProcessIncomingChat(const char* line, int color)
 			auto spamIt = settings.channels.find(CHANNEL_SPAM);
 			if (spamIt != settings.channels.end() && spamIt->second.console)
 			{
-				spamIt->second.console->AppendText(line);
+				spamIt->second.console->AppendText(line, MQColor(240, 240, 240), true);
 				if (spamIt->second.mainEnable && mainConsole)
-					mainConsole->AppendText(line);
+					mainConsole->AppendText(line, MQColor(240, 240, 240), true);
 			}
 		}
 	}
@@ -667,7 +678,7 @@ static bool IsLuaPattern(const std::string& pattern)
 {
 	for (size_t i = 0; i + 1 < pattern.size(); ++i)
 	{
-		if (pattern[i] == '%' && std::isalpha(static_cast<unsigned char>(pattern[i + 1])))
+		if (pattern[i] == '%')
 			return true;
 	}
 	return false;
