@@ -88,6 +88,12 @@ PLUGIN_API void OnPulse()
 	{
 		pulseTimer = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
 		g_chatEngine->CleanExpiredClaims();
+
+		if (!g_chatEngine->charName.empty() &&
+			g_chatEngine->m_lastSavedShowMain != g_chatEngine->showMainWindow)
+		{
+			g_chatEngine->SaveWindowVisibility();
+		}
 	}
 }
 
@@ -265,6 +271,7 @@ void MyChatEngine::LoadCharacterSettings()
 	activePresetId = database->GetOrCreatePreset(serverName, charName);
 	database->LoadSettings(activePresetId, settings);
 	database->LoadGlobalSettings(serverName, charName, settings);
+	LoadWindowVisibility();
 
 	if (settings.channels.empty())
 		PopulateDefaultChannels();
@@ -280,6 +287,16 @@ void MyChatEngine::LoadCharacterSettings()
 	ApplyFontSizes();
 	SaveCharacterSettings();
 	database->GetPresetList(serverName, presetList);
+
+	activePresetName.clear();
+	for (const auto& p : presetList)
+	{
+		if (p.id == activePresetId)
+		{
+			activePresetName = p.name;
+			break;
+		}
+	}
 }
 
 void MyChatEngine::SaveCharacterSettings()
@@ -290,6 +307,7 @@ void MyChatEngine::SaveCharacterSettings()
 	SyncFontSizes();
 	database->SaveSettings(activePresetId, settings);
 	database->SaveGlobalSettings(serverName, charName, settings);
+	SaveWindowVisibility();
 }
 
 void MyChatEngine::UnloadCharacterSettings()
@@ -305,6 +323,39 @@ void MyChatEngine::UnloadCharacterSettings()
 
 	settings.channels.clear();
 	charName.clear();
+}
+
+static std::string GetWindowVisibilityIniPath(const std::string& server, const std::string& charName)
+{
+	if (server.empty() || charName.empty())
+		return {};
+
+	std::string path = fmt::format("{}\\MQMyChat\\{}\\{}.ini", gPathConfig, server, charName);
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+	return path;
+}
+
+void MyChatEngine::LoadWindowVisibility()
+{
+	if (!pLocalPC)
+		return;
+
+	std::string path = GetWindowVisibilityIniPath(serverName, charName);
+	if (path.empty())
+		return;
+
+	showMainWindow = GetPrivateProfileBool("Windows", "ShowMain", true, path);
+	m_lastSavedShowMain = showMainWindow;
+}
+
+void MyChatEngine::SaveWindowVisibility()
+{
+	std::string path = GetWindowVisibilityIniPath(serverName, charName);
+	if (path.empty())
+		return;
+
+	WritePrivateProfileBool("Windows", "ShowMain", showMainWindow, path);
+	m_lastSavedShowMain = showMainWindow;
 }
 
 void MyChatEngine::RegisterBlechEvents()
@@ -655,25 +706,15 @@ static bool IsNPCName(const std::string& name)
 	if (GetGameState() != GAMESTATE_INGAME || !pLocalPlayer)
 		return false;
 
-	MQSpawnSearch search;
-	ClearSearchSpawn(&search);
+	std::string searchName = name;
+	for (char& c : searchName)
+		if (c == ' ') c = '_';
 
-	std::string query = fmt::format("npc =\"{}\"", name);
-	ParseSearchSpawn(query.c_str(), &search);
-	if (CountMatchingSpawns(&search, pLocalPlayer, false) > 0)
-		return true;
-
-	ClearSearchSpawn(&search);
-	query = fmt::format("pet =\"{}\"", name);
-	ParseSearchSpawn(query.c_str(), &search);
-	if (CountMatchingSpawns(&search, pLocalPlayer, false) > 0)
-		return true;
-
-	ClearSearchSpawn(&search);
-	query = fmt::format("npc \"{}\"", name);
-	ParseSearchSpawn(query.c_str(), &search);
-	if (CountMatchingSpawns(&search, pLocalPlayer, false) > 0)
-		return true;
+	if (SPAWNINFO* pNPC = GetSpawnByPartialName(searchName.c_str()))
+	{
+		if (pNPC->Type == SPAWN_NPC)
+			return true;
+	}
 
 	return false;
 }
@@ -685,6 +726,7 @@ static std::pair<bool, std::string> ExtractNameFromLine(const std::string& line)
 		"tells you,",
 		"says to you,",
 		" says, '",
+		" says '",
 		" says,",
 		" whispers,",
 		" shouts,",
@@ -707,18 +749,13 @@ static std::pair<bool, std::string> ExtractNameFromLine(const std::string& line)
 			continue;
 
 		size_t nameEnd = pos;
-		if (keyword[0] != ' ')
-		{
-			while (nameEnd > 0 && line[nameEnd - 1] == ' ')
-				nameEnd--;
-		}
+		while (nameEnd > 0 && line[nameEnd - 1] == ' ')
+			nameEnd--;
 
-		std::string name = line.substr(0, nameEnd);
-		if (name.empty())
+		if (nameEnd == 0)
 			continue;
 
-		while (!name.empty() && name.back() == ' ')
-			name.pop_back();
+		std::string name = line.substr(0, nameEnd);
 
 		bool isNPC = IsNPCName(name);
 		return { isNPC, name };
@@ -848,6 +885,21 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 	if (result.find("N3") != std::string::npos)
 	{
 		auto [isNPC, npcName] = ExtractNameFromLine(line);
+		if (!isNPC && !npcName.empty())
+		{
+			std::string searchName = npcName;
+			for (char& c : searchName)
+				if (c == ' ') c = '_';
+
+			if (SPAWNINFO* pNPC = GetSpawnByPartialName(searchName.c_str()))
+			{
+				if (pNPC->Type == SPAWN_NPC)
+				{
+					isNPC = true;
+					npcName = pNPC->DisplayedName;
+				}
+			}
+		}
 		if (isNPC && !npcName.empty())
 			replace("N3", npcName);
 		else

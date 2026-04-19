@@ -76,6 +76,7 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
         windowFlags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
 
     std::string winName = fmt::format("My Chat - Main##MQMyChat_{}", engine.charName);
+    ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin(winName.c_str(), &engine.showMainWindow, windowFlags))
     {
         ImGui::End();
@@ -181,9 +182,8 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
                     if (!isActive)
                     {
                         engine.SaveCharacterSettings();
+                        engine.database->SetActivePreset(engine.serverName, engine.charName, preset.id);
                         engine.UnloadCharacterSettings();
-                        engine.activePresetId = preset.id;
-                        engine.activePresetName = preset.name;
                         engine.LoadCharacterSettings();
                     }
                 }
@@ -276,6 +276,7 @@ void MyChatRenderer::RenderPopOutWindows(MyChatEngine& engine)
 
         std::string winName = fmt::format("My Chat - {}##MQMyChat_{}{}", ch.name, engine.charName, id);
         bool open = ch.popOut;
+        ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
         if (ImGui::Begin(winName.c_str(), &open, windowFlags))
         {
             if (ImGui::SmallButton(ch.locked ? ICON_MD_LOCK : ICON_MD_LOCK_OPEN))
@@ -307,6 +308,7 @@ void MyChatRenderer::RenderConfigGUI(MyChatEngine& engine)
     auto oldStyle = ImGuiTheme::ApplyTheme(engine.settings.themeIdx);
 
     std::string winName = fmt::format("My Chat - Config##MQMyChat_{}", engine.charName);
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(winName.c_str(), &engine.showConfigGUI, ImGuiWindowFlags_None))
     {
         if (ImGui::BeginTable("##ChannelTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
@@ -425,6 +427,7 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
     auto oldStyle = ImGuiTheme::ApplyTheme(engine.settings.themeIdx);
 
     std::string winName = fmt::format("My Chat - Edit: {}##MQMyChat_{}{}", ch.name, engine.charName, engine.editChannelId);
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(winName.c_str(), &engine.showEditGUI, ImGuiWindowFlags_None))
     {
         ImGui::Text("Channel: %s (ID: %d)", ch.name.c_str(), ch.channelId);

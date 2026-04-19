@@ -30,6 +30,9 @@ public:
     void SaveCharacterSettings();
     void UnloadCharacterSettings();
 
+    void LoadWindowVisibility();
+    void SaveWindowVisibility();
+
     void ProcessIncomingChat(const char* line, int color);
     void ProcessWriteChat(const char* line, int color);
 
@@ -75,6 +78,8 @@ public:
     bool                                 showConfigGUI = false;
     bool                                 showEditGUI = false;
     int                                  editChannelId = 0;
+
+    bool                                 m_lastSavedShowMain = true;
 
     bool                                 enableSpam = false;
 
