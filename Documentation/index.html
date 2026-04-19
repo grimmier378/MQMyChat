@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>MQMyChat Documentation</h1>
+
+    <h2>What is MQMyChat?</h2>
+
+    <p>MQMyChat is a native C++ MacroQuest plugin that gives you full control over how EverQuest
+    chat is displayed. It is a port of
+    <a href="https://github.com/grimmier378/MyChat" target="_blank">MyChat</a>, originally a
+    standalone Lua script that was later bundled into the
+    <a href="https://github.com/grimmier378/MyUI" target="_blank">MyUI</a> module collection.
+    MyUI is now the primary development home for the Lua version, with backports to the
+    standalone repo. MQMyChat rewrites it in C++ for better performance, deeper integration
+    with MacroQuest, and as a learning project for C++ development. The database format is
+    identical, so existing Lua MyChat users can migrate seamlessly.</p>
+
+    <p>Instead of relying on EQ's built-in chat windows (which are limited and hard to
+    filter), MQMyChat lets you create custom chat channels with pattern-based filters, color
+    coding, and multiple independent windows &mdash; all rendered through
+    <strong>ImGui</strong> (a lightweight graphical interface library that MacroQuest uses for
+    drawing windows, buttons, and other UI elements).</p>
+
+    <p>Here is what that means in practice:</p>
+
+    <ul>
+        <li><strong>Chat routing:</strong> Every line of chat that EQ produces passes through a
+        pattern matcher called <strong>Blech</strong> (a fast text-matching engine bundled with
+        MacroQuest &mdash; think of it as a specialized search tool that watches every line of
+        chat for patterns you define). You write patterns like
+        <code>"#*# tells you,#*#"</code>, where <code>#*#</code> is a wildcard that matches
+        any amount of text (see the <a
+        href="https://docs.macroquest.org/lua/events-and-binds/">Blech pattern reference</a>
+        for full syntax). MQMyChat routes matching lines to the channels you choose.</li>
+        <li><strong>Filtered channels:</strong> Each channel can have multiple events, and each
+        event can have multiple filters. A filter is a simple string match &mdash; if the chat
+        line contains the filter text, it gets routed. You can assign colors per-filter so
+        different types of chat stand out visually.</li>
+        <li><strong>Multiple windows:</strong> You can open as many chat windows as you want, each
+        showing a different set of channels as tabs. One window might show all your group/raid
+        chat, another might show tells and auction, and a third might show only spam.</li>
+        <li><strong>Token substitution:</strong> Filter patterns can contain tokens like
+        <code>M3</code> (your character name), <code>GP1</code> (any group member),
+        <code>N3</code> (NPC name), and others. At match time, the plugin replaces the token
+        with a live value from the game. This lets you write filters that work across characters
+        without hardcoding names. See the <a href="chat-routing.html#token-substitution">full
+        token reference</a>.</li>
+        <li><strong>Persistence:</strong> All your settings &mdash; channels, events, filters,
+        window layouts, tab order &mdash; are stored in a SQLite database (a small, self-contained
+        database stored as a single file on disk). They survive reloads and can include
+        character-specific or server-specific presets.</li>
+        <li><strong>Lua scripting:</strong> An embedded LuaJIT interpreter lets you run custom
+        scripts that respond to chat events, providing extensibility beyond the built-in
+        system.</li>
+    </ul>
+
+    <h2>Source File Structure</h2>
+
+    <p>The plugin is made up of 11 files. Here is what each one does and roughly how large it is:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Lines</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>MQMyChat.cpp</code></td>
+                <td>1014</td>
+                <td>Plugin entry point. Contains <code>MyChatEngine</code> implementation:
+                chat routing, Blech event setup, token substitution, command handling, and
+                the hooks into MQ's <code>OnIncomingChat</code> /
+                <code>OnWriteChatColor</code> callbacks.</td>
+            </tr>
+            <tr>
+                <td><code>MQMyChat.h</code></td>
+                <td>102</td>
+                <td><code>MyChatEngine</code> class declaration. Defines the central engine
+                that ties together the database, renderer, Blech matcher, Lua state, and
+                all channel data.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatChannel.h</code></td>
+                <td>73</td>
+                <td>Core data structures: <code>ChatFilter</code>, <code>ChatEvent</code>,
+                <code>ChatChannel</code>, <code>PresetInfo</code>,
+                <code>MyChatSettings</code>, and important constants like
+                <code>CHANNEL_SPAM</code> and
+                <code>CHANNEL_RESERVED_START</code>.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatDatabase.h</code></td>
+                <td>44</td>
+                <td><code>MyChatDatabase</code> class declaration. Defines the interface for
+                loading and saving all settings to SQLite.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatDatabase.cpp</code></td>
+                <td>832</td>
+                <td>SQLite persistence implementation. Creates the database schema, handles
+                saving/loading channels, events, and filters, seeds default presets, and
+                manages migration.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatRenderer.h</code></td>
+                <td>41</td>
+                <td><code>MyChatRenderer</code> class declaration. Defines the interface for
+                the ImGui rendering layer.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatRenderer.cpp</code></td>
+                <td>955</td>
+                <td>ImGui rendering implementation. Draws chat windows, tab bars, the
+                settings/configuration GUI, the channel editor, and handles user
+                interaction like scrolling and tab reordering.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatTLO.h</code></td>
+                <td>52</td>
+                <td>Top Level Object (TLO) type declarations. A TLO is how MacroQuest
+                exposes plugin data to macro scripts &mdash; think of it as a read-only
+                API that macros can call. Defines <code>MyChatType</code> and
+                <code>MyChatChannelType</code> so macros can query the plugin.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatTLO.cpp</code></td>
+                <td>215</td>
+                <td>TLO implementation. Exposes plugin data to MQ macros and provides the
+                <code>Send</code> method so macros/Lua can inject text into channels.</td>
+            </tr>
+            <tr>
+                <td><code>Theme.h</code></td>
+                <td>868</td>
+                <td>ImGui theme system. Contains 11 built-in color themes that can be
+                applied to the chat windows for visual customization.</td>
+            </tr>
+            <tr>
+                <td><code>CMakeLists.txt</code></td>
+                <td>34</td>
+                <td>CMake build configuration. Links against MQ2Main and required
+                libraries.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Key Dependencies</h2>
+
+    <p>MQMyChat depends on several libraries, most of which come from MacroQuest itself:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Dependency</th>
+                <th>What it provides</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>MQ2Main</strong></td>
+                <td>The MacroQuest core. Provides the plugin API, chat hooks, command
+                registration, TLO framework, and character data access.</td>
+            </tr>
+            <tr>
+                <td><strong>Blech</strong></td>
+                <td>A fast pattern matching engine bundled with MQ. MQMyChat uses it to match
+                incoming chat lines against event patterns. Patterns use <code>#*#</code>
+                as an uncaptured wildcard (matches any text), and <code>#1#</code>,
+                <code>#2#</code>, etc. as numbered capture wildcards (match any text and
+                pass the matched portion to a callback). These are not single-character
+                matchers &mdash; each one matches any amount of text. See the
+                <a href="https://docs.macroquest.org/lua/events-and-binds/">Blech pattern
+                reference</a> for details.</td>
+            </tr>
+            <tr>
+                <td><strong>SQLite3</strong></td>
+                <td>Embedded database engine. All plugin settings, channel definitions, and
+                presets are stored in a SQLite database file. Installed via vcpkg.</td>
+            </tr>
+            <tr>
+                <td><strong>LuaJIT / Lua 5.1</strong></td>
+                <td>Embedded scripting engine. Allows users to write Lua scripts that respond
+                to chat events. The source includes LuaJIT headers directly
+                (<code>luajit/lua.h</code>). Installed via vcpkg.</td>
+            </tr>
+            <tr>
+                <td><strong>Zep / ConsoleWidget</strong></td>
+                <td>Zep is a text editor library, and <code>ConsoleWidget</code> is
+                MacroQuest's wrapper around it that provides a scrollable, colored text
+                display area &mdash; similar to a terminal or console window. Each MQMyChat
+                channel gets its own <code>ConsoleWidget</code> instance where matched chat
+                lines appear.</td>
+            </tr>
+            <tr>
+                <td><strong>ImGui</strong></td>
+                <td>Immediate-mode GUI library (short for "Immediate Mode Graphical User
+                Interface"). Unlike traditional GUIs where you create widgets once and
+                update them, ImGui redraws the entire interface every frame. All of
+                MQMyChat's windows, tabs, buttons, and configuration panels are rendered
+                through ImGui. MacroQuest provides ImGui as part of its core.</td>
+            </tr>
+            <tr>
+                <td><strong>fmt</strong></td>
+                <td>Modern C++ formatting library. Used for string formatting throughout the
+                codebase.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>How to Build</h2>
+
+    <p>MQMyChat is built as part of the MacroQuest solution. It is not a standalone project.
+    To build it:</p>
+
+    <ol>
+        <li>Clone the MacroQuest repository and set up the build environment following the
+        standard MQ build instructions.</li>
+        <li>Place the <code>MQMyChat</code> folder under <code>plugins/</code> in your
+        MacroQuest source tree.</li>
+        <li>Make sure you have <strong>sqlite3</strong> and <strong>lua51</strong> installed
+        via vcpkg. The <code>CMakeLists.txt</code> uses
+        <code>find_package(unofficial-sqlite3)</code> and
+        <code>find_package(Lua REQUIRED)</code> to locate them.</li>
+        <li>Add the plugin to the MQ solution (CMake will pick it up if it is in the
+        plugins directory) and build.</li>
+    </ol>
+
+    <div class="note">
+        <strong>Note:</strong> If you just want to <em>use</em> MQMyChat, you do not need to
+        build it yourself. Pre-built versions may be available through your MacroQuest
+        distribution. This build section is for developers who want to modify the source.
+    </div>
+
+    <h2>Quick Links</h2>
+
+    <div class="link-grid">
+        <a href="architecture.html">
+            <strong>Architecture</strong>
+            How the pieces fit together: classes, data flow, and file relationships.
+        </a>
+        <a href="lifecycle.html">
+            <strong>Plugin Lifecycle</strong>
+            What happens when the plugin loads, a character enters the game, and the plugin
+            unloads.
+        </a>
+        <a href="chat-routing.html">
+            <strong>Chat Routing &amp; Tokens</strong>
+            How chat lines are matched, routed to channels, and how token substitution works.
+        </a>
+        <a href="database.html">
+            <strong>Database &amp; Settings</strong>
+            SQLite schema, how settings are loaded/saved, and the preset system.
+        </a>
+        <a href="rendering.html">
+            <strong>ImGui Rendering</strong>
+            How windows, tabs, and the configuration GUI are drawn.
+        </a>
+        <a href="commands-tlo.html">
+            <strong>Commands &amp; TLO</strong>
+            Slash commands for controlling the plugin and the TLO interface for macros.
+        </a>
+        <a href="extending.html">
+            <strong>How to Extend</strong>
+            Adding new channels, events, filters, themes, and Lua scripts.
+        </a>
+    </div>
+
+    <div class="page-nav">
+        <strong>Next:</strong> <a href="architecture.html">Architecture</a> &mdash; how the
+        pieces fit together.
+    </div>
+</main>
+
+</body>
+</html>

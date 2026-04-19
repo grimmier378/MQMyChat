@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html" class="active">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>Architecture Overview</h1>
+
+    <p>This page explains how MQMyChat is structured: what the major pieces are, how data flows
+    through them, and how the source files relate to each other. If you are new to the codebase,
+    start here before diving into specific topics.</p>
+
+    <h2>High-Level Design</h2>
+
+    <p>At the center of everything is the <strong>MyChatEngine</strong> class. Think of it as the
+    brain of the plugin. It owns and coordinates all the major subsystems:</p>
+
+    <ul>
+        <li><strong>Blech pattern matcher</strong> &mdash; A fast text-matching engine bundled
+        with MacroQuest. It watches every line of incoming chat and checks it against your
+        configured patterns. Patterns use <code>#*#</code> as a wildcard that matches any
+        amount of text, and <code>#1#</code>, <code>#2#</code>, etc. as numbered capture
+        wildcards that also pass the matched text to a callback. (See the
+        <a href="https://docs.macroquest.org/lua/events-and-binds/">Blech pattern
+        reference</a> for full syntax.)</li>
+        <li><strong>SQLite database</strong> (via <code>MyChatDatabase</code>) &mdash; A
+        small self-contained database stored as a single file on disk. It holds all your
+        settings, channels, events, and filters so they persist between sessions.</li>
+        <li><strong>Embedded LuaJIT state</strong> &mdash; A Lua interpreter (specifically
+        LuaJIT, a fast Lua 5.1 implementation) for running custom scripts in response to
+        chat events.</li>
+        <li><strong>ConsoleWidget instances</strong> &mdash; One per channel. A
+        <code>ConsoleWidget</code> is MacroQuest's wrapper around the Zep text editor
+        library that provides a scrollable, colored text display area (like a terminal
+        window). This is where chat lines actually appear.</li>
+        <li><strong>MyChatRenderer</strong> &mdash; Handles all ImGui drawing. ImGui
+        ("Immediate Mode GUI") is the graphical interface library MacroQuest uses &mdash;
+        it redraws windows, tabs, buttons, and text every frame. The renderer draws the
+        chat windows, the settings GUI, and the channel editor.</li>
+    </ul>
+
+    <p>The engine does not render anything directly. It processes chat, manages state, and hands
+    data to the renderer. The renderer header only forward-declares <code>MyChatEngine</code>
+    &mdash; it does not include channel data structures directly. The renderer's .cpp file
+    includes <code>MQMyChat.h</code> and <code>MyChatDatabase.h</code> to access the full
+    types, but the separation at the header level keeps dependencies clean. The renderer does
+    not know about Blech &mdash; it just reads the channel data and draws it.</p>
+
+    <h2>Data Flow</h2>
+
+    <p>Here is how a single line of chat travels from EverQuest to your screen through MQMyChat.
+    Follow the arrows from top to bottom:</p>
+
+    <div class="diagram">
+ EverQuest Client
+       |
+       v
+ +------------------------------+
+ | OnIncomingChat /             |     MQ hooks these callbacks and
+ | OnWriteChatColor             |     passes every chat line to the plugin.
+ +------------------------------+
+       |
+       v
+ +------------------------------+
+ | Blech::Feed()                |     The raw chat text is fed into the
+ |                              |     Blech pattern matcher.
+ +------------------------------+
+       |
+       |  (pattern matches)
+       v
+ +------------------------------+
+ | BlechCallback()              |     When a pattern matches, this callback
+ |                              |     fires with the matched event ID.
+ +------------------------------+
+       |
+       v
+ +------------------------------+
+ | RouteToChannel()             |     Looks up which channel(s) the matched
+ |                              |     event belongs to.
+ +------------------------------+
+       |
+       v
+ +------------------------------+
+ | Filter Matching              |     Each event can have filters. The chat
+ |                              |     line is checked against filter strings
+ |                              |     to determine color and inclusion.
+ +------------------------------+
+       |
+       v
+ +------------------------------+
+ | ConsoleWidget::AppendText()  |     The matched, colored line is appended
+ |                              |     to the channel's console widget.
+ +------------------------------+
+       |
+       v
+ +------------------------------+
+ | MyChatRenderer draws the     |     ImGui renders the console widget
+ | channel tab in the window    |     inside a tab within a chat window.
+ +------------------------------+</div>
+
+    <p>The important thing to understand is that chat flows in one direction. EQ produces it,
+    Blech matches it, the engine routes it, and the renderer displays it. There is no
+    back-and-forth.</p>
+
+    <h2>File-by-File Breakdown</h2>
+
+    <p>Now that you understand the big picture, here is how the source files map to it. For each
+    file, we explain what it does and how it connects to the others.</p>
+
+    <h3>MQMyChat.h + MQMyChat.cpp &mdash; The Engine</h3>
+
+    <p>These two files define <code>MyChatEngine</code>, the central class. The header declares
+    the class with its member variables (the Blech instance, the database, the Lua state, the
+    settings struct) and its public methods. The cpp file implements everything:</p>
+
+    <ul>
+        <li><strong>Plugin lifecycle hooks:</strong> <code>InitializePlugin</code>,
+        <code>ShutdownPlugin</code>, <code>SetGameState</code>, <code>OnPulse</code>. These
+        are called by MQ at specific moments (see
+        <a href="lifecycle.html">Plugin Lifecycle</a>).</li>
+        <li><strong>Chat hooks:</strong> <code>OnIncomingChat</code> and
+        <code>OnWriteChatColor</code>. These intercept chat from EQ.</li>
+        <li><strong>Blech setup:</strong> Registering patterns with the Blech matcher and
+        defining the callback that fires on matches.</li>
+        <li><strong>Token substitution:</strong> Replacing tokens like <code>${Me}</code> in
+        patterns before they are registered with Blech.</li>
+        <li><strong>Command handling:</strong> Processing <code>/mychat</code> slash commands.</li>
+    </ul>
+
+    <p>This file includes <code>MyChatChannel.h</code> (for data structures),
+    <code>MyChatDatabase.h</code> (for persistence), <code>MyChatRenderer.h</code> (for
+    rendering), and <code>MyChatTLO.h</code> (for TLO registration).</p>
+
+    <h3>MyChatChannel.h &mdash; Data Structures</h3>
+
+    <p>This is a header-only file with no corresponding cpp. It defines the core data types that
+    everything else uses:</p>
+
+    <ul>
+        <li><code>ChatFilter</code> &mdash; A string to match against chat text, plus a color
+        to apply when it matches. Each filter can also be individually enabled or hidden.</li>
+        <li><code>ChatEvent</code> &mdash; A Blech pattern string plus a list of
+        <code>ChatFilter</code>s. When the pattern matches, the filters determine what color
+        to use. Also tracks its own Blech registration ID.</li>
+        <li><code>ChatChannel</code> &mdash; A named group of <code>ChatEvent</code>s. Each
+        channel has its own <code>ConsoleWidget</code> for display. Think of a channel as
+        one tab in a chat window. Channels also carry per-channel settings like echo command,
+        font size, scale, pop-out window support, locking, link detection, and a command
+        input history buffer.</li>
+        <li><code>PresetInfo</code> &mdash; Metadata for a saved preset: its ID, name,
+        server name, and who created it. Presets let you save and load entire channel
+        configurations.</li>
+        <li><code>MyChatSettings</code> &mdash; The top-level settings container. Holds a map
+        of all channels, global options (theme, timestamps, font size, auto-scroll, local
+        echo, hotkey binding), and window configurations.</li>
+    </ul>
+
+    <p>This file also defines important constants (see the
+    <a href="#constants">Constants</a> section below).</p>
+
+    <h3>MyChatDatabase.h + MyChatDatabase.cpp &mdash; Persistence</h3>
+
+    <p>The database layer. <code>MyChatDatabase</code> wraps SQLite3 and provides methods to
+    load and save the entire settings tree. The cpp file is one of the largest in the project
+    (832 lines) because it handles:</p>
+
+    <ul>
+        <li>Creating the database schema (tables for channels, events, filters, settings)</li>
+        <li>Seeding default presets so new users get a reasonable starting configuration</li>
+        <li>Loading everything on startup and saving changes back</li>
+        <li>Schema migration when the database format changes between versions</li>
+    </ul>
+
+    <p>For a deep dive, see <a href="database.html">Database &amp; Settings</a>.</p>
+
+    <h3>MyChatRenderer.h + MyChatRenderer.cpp &mdash; The UI</h3>
+
+    <p><code>MyChatRenderer</code> handles all ImGui drawing. The header file only
+    forward-declares <code>MyChatEngine</code> &mdash; it does not directly include any data
+    structure headers. The .cpp file includes <code>MQMyChat.h</code> and
+    <code>MyChatDatabase.h</code> to access the full types. It reads from the
+    <code>MyChatSettings</code> structure (it does not own the data &mdash; the engine does)
+    and draws:</p>
+
+    <ul>
+        <li>Chat windows with tab bars (one tab per channel)</li>
+        <li>The settings/configuration panel</li>
+        <li>The channel editor (add/remove/edit channels, events, filters)</li>
+        <li>Tab reordering via drag-and-drop</li>
+        <li>Theme selection</li>
+    </ul>
+
+    <p>At 955 lines, this is the second-largest file. For details, see
+    <a href="rendering.html">ImGui Rendering</a>.</p>
+
+    <h3>MyChatTLO.h + MyChatTLO.cpp &mdash; Macro Interface</h3>
+
+    <p>These files expose plugin data to MQ macros through the Top Level Object (TLO) system.
+    A TLO is MacroQuest's way of letting macro scripts read data from plugins &mdash; think
+    of it as a read-only API that macros can call using expressions like
+    <code>${MyChat.Channel[Tells].Name}</code>. This is how macro scripts and Lua scripts
+    can interact with MQMyChat:</p>
+
+    <ul>
+        <li><code>MyChatType</code> &mdash; The root TLO. Lets macros query global state.</li>
+        <li><code>MyChatChannelType</code> &mdash; Represents a single channel. Lets macros
+        read channel properties.</li>
+        <li><strong>Send method:</strong> Allows macros to inject text directly into a channel,
+        bypassing the normal Blech routing.</li>
+    </ul>
+
+    <p>See <a href="commands-tlo.html">Commands &amp; TLO</a> for usage examples.</p>
+
+    <h3>Theme.h &mdash; Visual Themes</h3>
+
+    <p>A large header file (868 lines) containing 11 ImGui color themes. Each theme is a function
+    that sets ImGui style colors. The renderer calls into this file when the user selects a
+    different theme from the settings panel.</p>
+
+    <h3>CMakeLists.txt &mdash; Build Configuration</h3>
+
+    <p>A short (34-line) CMake file that defines the build target, links against MQ2Main, and
+    finds the required packages (SQLite3, Lua). Nothing unusual here &mdash; it follows the
+    standard MQ plugin CMake pattern.</p>
+
+    <h2>Key Classes</h2>
+
+    <p>Here is a summary of the main classes and what they are responsible for:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Class</th>
+                <th>Defined In</th>
+                <th>Responsibility</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>MyChatEngine</code></td>
+                <td><code>MQMyChat.h/.cpp</code></td>
+                <td>Central coordinator. Owns the Blech matcher, database, Lua state, and
+                settings. Handles chat routing, commands, and plugin lifecycle.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatDatabase</code></td>
+                <td><code>MyChatDatabase.h/.cpp</code></td>
+                <td>SQLite wrapper. Loads and saves all settings. Seeds defaults for new
+                installs.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatRenderer</code></td>
+                <td><code>MyChatRenderer.h/.cpp</code></td>
+                <td>ImGui rendering. Draws chat windows, tabs, settings GUI, and the channel
+                editor.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatType</code></td>
+                <td><code>MyChatTLO.h/.cpp</code></td>
+                <td>Root TLO type. Exposes plugin data to macros.</td>
+            </tr>
+            <tr>
+                <td><code>MyChatChannelType</code></td>
+                <td><code>MyChatTLO.h/.cpp</code></td>
+                <td>Channel TLO type. Exposes individual channel data to macros.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Key Data Structures</h2>
+
+    <p>These are all defined in <code>MyChatChannel.h</code> and are used throughout the
+    codebase. Understanding them is essential to understanding the plugin:</p>
+
+    <h3>ChatFilter</h3>
+    <p>The smallest unit of matching. A filter has a <strong>match string</strong>, a
+    <strong>color</strong>, an <strong>enabled</strong> flag, and a <strong>hidden</strong>
+    flag. When a chat line contains the match string, the line is displayed in that color.
+    If a chat event has multiple filters, the first one that matches determines the color.
+    Disabled or hidden filters are skipped during matching.</p>
+
+    <h3>ChatEvent</h3>
+    <p>Represents a Blech pattern plus its associated filters. The pattern is the broad match
+    (like <code>"#*# tells you, '#*#'"</code>) that Blech checks against every incoming line.
+    Remember that <code>#*#</code> is not a single-character wildcard &mdash; it matches
+    any amount of text (zero or more characters). When the pattern fires, the event's filters
+    provide fine-grained color control. Each event also stores its Blech registration ID
+    (<code>blechId</code>) so it can be unregistered later.</p>
+
+    <h3>ChatChannel</h3>
+    <p>A named collection of events. Each channel has:</p>
+    <ul>
+        <li>A name (displayed as a tab label)</li>
+        <li>A list of <code>ChatEvent</code>s that feed into it</li>
+        <li>A <code>ConsoleWidget</code> instance that displays the matched chat</li>
+        <li>An echo command (defaults to <code>/say</code>) &mdash; the slash command used
+        when you type into the channel's input box</li>
+        <li>Display settings: font size, scale factor, link detection, pop-out window mode,
+        and a lock flag to prevent accidental changes</li>
+        <li>A command history buffer (up to <code>MAX_COMMAND_HISTORY</code> entries) and
+        an input text buffer for the chat input box</li>
+        <li>A tab order value that controls where the channel appears among tabs</li>
+    </ul>
+
+    <h3>PresetInfo</h3>
+    <p>Metadata about a saved configuration preset. Each preset has an ID, a human-readable
+    name, the server it was created on, and the character who created it. Presets let users
+    save their entire channel setup and reload it later, or share it across characters on
+    the same server. See <a href="database.html">Database &amp; Settings</a> for how presets
+    are stored and loaded.</p>
+
+    <h3>MyChatSettings</h3>
+    <p>The top-level container for all plugin state. It holds:</p>
+    <ul>
+        <li>A <code>std::map</code> of channel ID to <code>ChatChannel</code></li>
+        <li>Global settings: theme index, timestamp toggle, global scale, default echo
+        command, default font size, link detection, auto-scroll, local echo, and a
+        configurable hotkey for focusing the chat input</li>
+        <li>A window lock flag that prevents all windows from being moved or resized</li>
+    </ul>
+
+    <h2 id="constants">Important Constants</h2>
+
+    <p>These constants, defined in <code>MyChatChannel.h</code>, control various behaviors:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>CHANNEL_SPAM</code></td>
+                <td><code>9000</code></td>
+                <td>The ID of the built-in spam channel. All unmatched chat goes here. This
+                is a catch-all so nothing is lost.</td>
+            </tr>
+            <tr>
+                <td><code>CHANNEL_RESERVED_START</code></td>
+                <td><code>9000</code></td>
+                <td>Channel IDs at or above this value are reserved for system use. User-created
+                channels should have IDs below this.</td>
+            </tr>
+            <tr>
+                <td><code>CLAIMED_TTL</code></td>
+                <td><code>0.5f</code></td>
+                <td>Time-to-live in seconds for a "claimed" chat line. When a line is matched
+                by an event, it is marked as claimed for this duration to prevent
+                duplicate routing.</td>
+            </tr>
+            <tr>
+                <td><code>MAX_COMMAND_HISTORY</code></td>
+                <td><code>100</code></td>
+                <td>Maximum number of commands stored in the input history. The chat input
+                box keeps a rolling history so you can press up/down to recall previous
+                commands.</td>
+            </tr>
+            <tr>
+                <td><code>MAX_CHANNEL_HISTORY</code></td>
+                <td><code>10</code></td>
+                <td>Maximum number of recent channel entries kept per channel. Limits how
+                many history entries each channel retains.</td>
+            </tr>
+            <tr>
+                <td><code>TAB_ORDER_SAVE_INTERVAL</code></td>
+                <td><code>3.0f</code></td>
+                <td>How often (in seconds) the plugin saves tab order changes to the database.
+                Tab reordering happens frequently via drag-and-drop, so saving is debounced
+                to avoid excessive disk writes.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Dependency Diagram</h2>
+
+    <p>This shows which files include which. Arrows mean "includes" or "depends on":</p>
+
+    <div class="diagram">
+ CMakeLists.txt
+       |
+       | (builds)
+       v
+ MQMyChat.cpp  ------>  MQMyChat.h  -------->  MyChatChannel.h
+       |                    |                        ^
+       |                    +-------->  Blech.h      |
+       |                                             |
+       +---->  MyChatDatabase.h  ------------------->+
+       |            |                                |
+       |            v                                |
+       |       MyChatDatabase.cpp                    |
+       |                                             |
+       +---->  MyChatRenderer.h                      |
+       |            |                   (data structures used
+       |            v                    by all other files)
+       |       MyChatRenderer.cpp ----> MQMyChat.h --+
+       |            |                        |
+       |            +----> MyChatDatabase.h  |
+       |            v                        |
+       |         Theme.h                     |
+       |                                     |
+       +---->  MyChatTLO.h                   |
+                    |                        |
+                    v                        |
+               MyChatTLO.cpp                 |
+
+ Note: MyChatRenderer.h only forward-declares
+ MyChatEngine (no direct include of MyChatChannel.h).
+ The .cpp file gets the full types through MQMyChat.h.</div>
+
+    <p>The key thing to notice is that <code>MyChatChannel.h</code> is at the bottom of the
+    dependency tree. Nearly every other file depends on it because it defines the data
+    structures that flow through the entire system. If you change a data structure there, you
+    will likely need to update code in multiple files.</p>
+
+    <p><code>MQMyChat.cpp</code> sits at the top &mdash; it pulls everything together. The
+    database, renderer, and TLO modules are relatively independent of each other; they
+    communicate through the shared <code>MyChatSettings</code> data and the engine that owns
+    it.</p>
+
+    <div class="page-nav">
+        <strong>Next:</strong> <a href="lifecycle.html">Plugin Lifecycle</a> &mdash; what
+        happens when the plugin loads and a character enters the game.
+    </div>
+</main>
+
+</body>
+</html>

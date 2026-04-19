@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImGui Rendering - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html" class="active">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>ImGui Rendering</h1>
+
+    <p>All of MQMyChat's visual output &mdash; the chat windows, tabs, configuration panels,
+    and channel editors &mdash; is drawn using <strong>ImGui</strong> (Immediate Mode GUI).
+    If you have not worked with ImGui before, the key idea is that it is "immediate mode":
+    instead of creating persistent widget objects (like a button that stays around until you
+    destroy it), you <em>describe</em> what should be on screen every single frame. Each frame,
+    your code says "draw a button here, draw text there," and ImGui handles the rest &mdash;
+    hit testing, hover effects, click detection, all of it. If your code does not draw the
+    button on the next frame, it simply disappears. This makes the code very straightforward:
+    what you see on screen is exactly what the render function last described.</p>
+
+    <p>The rendering code lives in <code>MyChatRenderer.h</code> (class declaration) and
+    <code>MyChatRenderer.cpp</code> (implementation).</p>
+
+    <h2>MyChatRenderer Class</h2>
+
+    <p>The renderer exposes <strong>4 public methods</strong>, all called from
+    <code>OnUpdateImGui</code> in <code>MQMyChat.cpp</code> every frame:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>What It Draws</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>RenderMainWindow()</code></td>
+                <td>The primary chat window with menu bar, tab bar, and console output</td>
+            </tr>
+            <tr>
+                <td><code>RenderPopOutWindows()</code></td>
+                <td>Separate ImGui windows for channels that have been "popped out"</td>
+            </tr>
+            <tr>
+                <td><code>RenderConfigGUI()</code></td>
+                <td>The settings/configuration window where you manage channels</td>
+            </tr>
+            <tr>
+                <td><code>RenderEditChannelGUI()</code></td>
+                <td>The channel editor window for editing events and filters</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>Each method is self-contained &mdash; it creates its own ImGui window and handles all
+    interaction within it. The call order does not matter.</p>
+
+    <h2>Main Window</h2>
+
+    <p><code>RenderMainWindow()</code> (starting at line 67 in <code>MyChatRenderer.cpp</code>)
+    draws the primary chat interface.</p>
+
+    <h3>Window Setup</h3>
+
+    <p>The window is created with:</p>
+
+    <pre><code>ImGui::Begin("My Chat - Main##MQMyChat_{charName}", ...);</code></pre>
+
+    <p>Key details:</p>
+
+    <ul>
+        <li><strong>First-use size:</strong> 600 x 400 pixels, set via
+        <code>ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver)</code>. The
+        <code>ImGuiCond_FirstUseEver</code> flag means this size is only applied the very
+        first time the window appears. After that, ImGui remembers the size the user dragged
+        it to (stored in the character's overlay INI file, typically
+        <code>config\MacroQuest_Overlay\server_charname.ini</code>) and uses that instead.</li>
+        <li><strong>Window flags:</strong> Always includes <code>ImGuiWindowFlags_MenuBar</code>,
+        which tells ImGui to reserve space for a menu bar at the top of the window.
+        When the window is <strong>locked</strong>, it also adds
+        <code>ImGuiWindowFlags_NoMove</code> and <code>ImGuiWindowFlags_NoResize</code> so the
+        user cannot accidentally drag or resize it.</li>
+        <li><strong>Begin/End pairing:</strong> Every ImGui window starts with
+        <code>ImGui::Begin()</code> and must end with <code>ImGui::End()</code>. Everything you
+        draw between those two calls appears inside that window. If <code>Begin()</code> returns
+        <code>false</code> (meaning the window is collapsed or hidden), the renderer skips
+        drawing the contents but still calls <code>End()</code> &mdash; ImGui requires this
+        pairing even when the window is not visible.</li>
+        <li><strong>Theme:</strong> The active <a href="#theme-system">theme</a> is applied
+        before the window begins rendering and reset after it finishes, using
+        <code>ImGuiTheme::ApplyTheme()</code> and <code>ImGuiTheme::ResetTheme()</code>.</li>
+    </ul>
+
+    <h3>Menu Bar</h3>
+
+    <p>The menu bar sits at the top of the main window and contains several menus and buttons:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Menu / Button</th>
+                <th>Contents</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Lock button</strong></td>
+                <td>Toggles the window lock (prevents moving and resizing)</td>
+            </tr>
+            <tr>
+                <td><strong>Settings button</strong></td>
+                <td>Opens the <a href="#config-gui">Config GUI</a> window</td>
+            </tr>
+            <tr>
+                <td><strong>Options menu</strong></td>
+                <td>
+                    <ul>
+                        <li>Timestamps toggle</li>
+                        <li>Links toggle</li>
+                        <li>Local Echo toggle</li>
+                        <li>Auto Scroll toggle</li>
+                        <li>Log Commands toggle</li>
+                        <li>Spam Channel toggle (creates channel ID 9000)</li>
+                        <li>Key Focus configuration</li>
+                        <li>Main Echo input field</li>
+                        <li>Main Font Size input (8&ndash;48 range)</li>
+                        <li><a href="#theme-system">Theme picker</a></li>
+                        <li>Save Settings button</li>
+                    </ul>
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Channels menu</strong></td>
+                <td>Checkboxes to enable or disable each channel</td>
+            </tr>
+            <tr>
+                <td><strong>Links menu</strong></td>
+                <td>Checkboxes to toggle clickable item links per channel</td>
+            </tr>
+            <tr>
+                <td><strong>PopOut menu</strong></td>
+                <td>Checkboxes to pop out channels into <a href="#popout-windows">separate
+                windows</a></td>
+            </tr>
+            <tr>
+                <td><strong>Presets menu</strong></td>
+                <td>Shows the active <a href="database.html#preset-system">preset</a> name,
+                menu items to switch presets, and a "Save As New" input field for creating
+                new presets</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="note">
+        <strong>Preset switching flow:</strong> When you select a different preset from the
+        Presets menu, the plugin executes a save &rarr; SetActivePreset &rarr; unload &rarr;
+        load sequence. See <a href="database.html">Database &amp; Settings</a> for details.
+    </div>
+
+    <h3>Tab Bar</h3>
+
+    <p>Below the menu bar is a tab bar containing one tab per enabled channel, plus a hardcoded
+    <strong>"Main"</strong> tab that always appears first.</p>
+
+    <pre><code>ImGui::BeginTabBar("##ChatTabs", ImGuiTabBarFlags_Reorderable
+                                   | ImGuiTabBarFlags_FittingPolicyShrink
+                                   | ImGuiTabBarFlags_TabListPopupButton);</code></pre>
+
+    <div class="note">
+        <strong>About the <code>##</code> prefix:</strong> In ImGui, the <code>##</code> in an
+        ID string separates the visible label from the internal ID. <code>"##ChatTabs"</code>
+        means there is no visible label (empty string before <code>##</code>), but ImGui
+        internally identifies this tab bar as "ChatTabs". This prevents ID conflicts when
+        multiple elements share the same visible text.
+    </div>
+
+    <p>Key behaviors:</p>
+
+    <ul>
+        <li><strong>Reorderable:</strong> You can drag tabs to rearrange them. MQMyChat tracks
+        the new order and saves it (see below).</li>
+        <li><strong>Shrink policy:</strong> When there are too many tabs to fit, they shrink
+        to accommodate more. A popup button (small arrow) appears at the edge of the tab bar
+        to list all tabs in a dropdown.</li>
+        <li><strong>Sort order:</strong> Channels are sorted by their <code>tabOrder</code>
+        field from <code>sortedChannels</code>. The Main tab is always first.</li>
+        <li><strong>PopOut channels skipped:</strong> If a channel has <code>popOut=true</code>,
+        it does not appear in the tab bar &mdash; it gets its own
+        <a href="#popout-windows">window</a> instead.</li>
+    </ul>
+
+    <h4>Tab Reorder Detection</h4>
+
+    <p>When you drag a tab to a new position, MQMyChat detects the change using
+    <code>DetectTabReorder()</code>. It works by recording the X pixel position of each tab
+    after rendering, sorting them left-to-right, and comparing that order to the previous
+    frame. If the order changed, it marks the tab order as dirty.</p>
+
+    <p><code>FlushTabOrder()</code> then handles the save, but with a deliberate
+    <strong>3-second delay</strong> (defined as <code>TAB_ORDER_SAVE_INTERVAL</code> in
+    <code>MyChatChannel.h</code>). This debouncing prevents a flood of database writes when
+    you rapidly drag tabs around. It:</p>
+
+    <ol>
+        <li>Updates the <code>tabOrder</code> field on each channel to reflect the new order</li>
+        <li>Saves everything to the <a href="database.html">database</a> once the 3-second
+        quiet period elapses</li>
+    </ol>
+
+    <h2>ConsoleWidget and Zep</h2>
+
+    <p>Each channel's chat output is rendered using a <code>ConsoleWidget</code>
+    (<code>mq::imgui::ConsoleWidget</code>), which is built on top of the
+    <strong>Zep</strong> text editor component.</p>
+
+    <h3>What Is Zep?</h3>
+
+    <p>Zep is an embeddable text editor that provides scrollable, syntax-highlighted text
+    display. MQMyChat uses it as a read-only console &mdash; you cannot edit the text, but
+    you get smooth scrolling, text selection, and colored output.</p>
+
+    <h3>Adding Text</h3>
+
+    <p>When a chat line is routed to a channel (see
+    <a href="chat-routing.html">Chat Routing</a>), it is added to that channel's console
+    via:</p>
+
+    <pre><code>console->AppendText(text, color, newline);</code></pre>
+
+    <p>The <code>color</code> parameter controls the text color for that line. The
+    <code>newline</code> parameter determines whether a line break is added after the text.</p>
+
+    <h3>Font Size</h3>
+
+    <p>Zep manages its own font rendering. Font size is controlled through:</p>
+
+    <ul>
+        <li><code>SetPixelHeight(size)</code> &mdash; Sets the font size in pixels</li>
+        <li><code>GetPixelHeight()</code> &mdash; Reads the current font size back</li>
+    </ul>
+
+    <p>Zep also supports <strong>Ctrl+/- zoom</strong> (Ctrl+= to increase, Ctrl+- to
+    decrease, Ctrl+0 to reset) internally, without MQMyChat needing to handle it. These are
+    the number row keys only &mdash; numpad keys have no effect.</p>
+
+    <h2>DrawConsole and DrawMainConsole</h2>
+
+    <p><code>DrawConsole()</code> (line 632) and <code>DrawMainConsole()</code> (line 735)
+    handle the layout of each channel's display area.</p>
+
+    <h3>Layout</h3>
+
+    <p>The layout is straightforward:</p>
+
+    <div class="diagram">┌──────────────────────────────┐
+│  Console Output (Zep)        │
+│  Takes all available height  │
+│  minus footer                │
+│                              │
+│                              │
+│                              │
+├──────────────────────────────┤
+│ &gt; Input field                │
+└──────────────────────────────┘</div>
+
+    <p>The console fills all available vertical space, leaving room for a single-line input
+    field at the bottom.</p>
+
+    <h3>Input Field</h3>
+
+    <p>The input field at the bottom of each console supports:</p>
+
+    <ul>
+        <li><strong>Command execution:</strong> If the typed text starts with <code>/</code>,
+        it is sent directly to MacroQuest's <code>DoCommand()</code> function. Otherwise, the
+        channel's <strong>echo</strong> command is prepended. For example, typing "hello" in a
+        channel with echo <code>/gu</code> sends <code>/gu hello</code>.</li>
+        <li><strong>Command history:</strong> Use the <strong>Up</strong> and
+        <strong>Down</strong> arrow keys to cycle through previously typed commands. Each
+        channel maintains its own history (the Main tab has a separate history too). History
+        is capped at <strong>100 entries</strong> (<code>MAX_COMMAND_HISTORY</code>). When you
+        re-enter a command that already exists in the history, the old duplicate is removed
+        and the command is added fresh at the end, so your history stays clean.</li>
+        <li><strong>Local echo:</strong> When enabled, your typed text appears in the channel
+        as <code>&gt; text</code> in gray, so you can see what you sent.</li>
+        <li><strong>Auto-focus:</strong> After pressing Enter to send a command, the cursor
+        automatically returns to the input field so you can keep typing.</li>
+    </ul>
+
+    <h3 id="focus-key">Focus Key</h3>
+
+    <p>The focus key is a configurable keyboard shortcut that immediately moves your cursor
+    to the input field. The default is <strong>RightShift</strong>.</p>
+
+    <p><code>CheckFocusKey()</code> maps a key name string (like <code>"RightShift"</code>)
+    to an ImGui key enum. Supported keys include:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Keys</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Modifiers</td>
+                <td>LeftShift, RightShift, LeftCtrl, RightCtrl, LeftAlt, RightAlt</td>
+            </tr>
+            <tr>
+                <td>Special</td>
+                <td>GraveAccent (backtick), Enter, Tab, Space, Backspace, Delete, Insert</td>
+            </tr>
+            <tr>
+                <td>Navigation</td>
+                <td>UpArrow, DownArrow, LeftArrow, RightArrow, Home, End, PageUp, PageDown</td>
+            </tr>
+            <tr>
+                <td>Function</td>
+                <td>F1 through F12</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>When the configured key is pressed, the renderer sets an internal flag
+    (<code>m_setFocus = true</code>) which triggers
+    <code>ImGui::SetKeyboardFocusHere()</code> on the next frame, placing the cursor in
+    the input field.</p>
+
+    <h2 id="popout-windows">Pop-Out Windows</h2>
+
+    <p><code>RenderPopOutWindows()</code> (line 264) creates a separate ImGui window for each
+    channel that has <code>popOut = true</code>.</p>
+
+    <pre><code>ImGui::Begin("My Chat - {channelName}##MQMyChat_{charName}{channelId}", ...);</code></pre>
+
+    <ul>
+        <li><strong>First-use size:</strong> 400 x 300 pixels</li>
+        <li>Each pop-out has its own <strong>Lock button</strong> (toggles move/resize lock)
+        and <strong>Settings button</strong> (opens the
+        <a href="#edit-channel-gui">Edit Channel GUI</a> for that specific channel)</li>
+        <li>Uses the same <code>DrawConsole()</code> rendering as tabs in the main window</li>
+        <li><strong>Closing the window</strong> (clicking the X button) sets
+        <code>popOut = false</code> on that channel, returning it to the tab bar</li>
+    </ul>
+
+    <p>Pop-out windows are useful when you want to keep certain channels always visible
+    regardless of which tab is active in the main window. For example, you might pop out
+    your Tells channel so you never miss an incoming tell.</p>
+
+    <h2 id="config-gui">Config GUI</h2>
+
+    <p><code>RenderConfigGUI()</code> (line 303) draws the channel management window.</p>
+
+    <pre><code>ImGui::Begin("My Chat - Config##MQMyChat_{charName}", ...);</code></pre>
+
+    <ul>
+        <li><strong>First-use size:</strong> 500 x 400 pixels</li>
+    </ul>
+
+    <h3>Channel Table</h3>
+
+    <p>The main content is a table listing all channels. Each row uses
+    <code>ImGui::PushID(id)</code> / <code>ImGui::PopID()</code> to scope its widgets. This
+    is an ImGui pattern that prevents ID collisions &mdash; without it, every "Edit" button
+    would have the same internal ID and ImGui would not know which one you clicked. By
+    pushing the channel ID onto the ID stack, each row's widgets get unique IDs
+    automatically.</p>
+
+    <p>The table columns are:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Column</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Enabled</td><td>Checkbox to turn the channel on or off</td></tr>
+            <tr><td>Name</td><td>The channel's display name</td></tr>
+            <tr><td>Echo</td><td>The echo command (e.g., <code>/gu</code>)</td></tr>
+            <tr><td>Events</td><td>Number of events defined for this channel</td></tr>
+            <tr><td>Actions</td><td>Edit button (opens the <a href="#edit-channel-gui">channel
+            editor</a>) and Remove button</td></tr>
+        </tbody>
+    </table>
+
+    <div class="note">
+        <strong>Note:</strong> The Spam channel (channel ID 9000) does not appear in this
+        table. It is toggled via the Options menu in the main window's menu bar instead.
+    </div>
+
+    <h3>Adding a Channel</h3>
+
+    <p>Below the table is an "Add Channel" form with two input fields:</p>
+
+    <ul>
+        <li><strong>Name</strong> &mdash; The display name for the new channel</li>
+        <li><strong>Echo</strong> &mdash; The echo command to use</li>
+    </ul>
+
+    <p>Clicking <strong>Create</strong> adds the channel to the in-memory list. A
+    <strong>Save All</strong> button persists all changes to the
+    <a href="database.html">database</a>.</p>
+
+    <h2 id="edit-channel-gui">Edit Channel GUI</h2>
+
+    <p><code>RenderEditChannelGUI()</code> (line 414) opens a dedicated editor for a single
+    channel.</p>
+
+    <pre><code>ImGui::Begin("My Chat - Edit: {name}##MQMyChat_{charName}{id}", ...);</code></pre>
+
+    <ul>
+        <li><strong>First-use size:</strong> 400 x 300 pixels</li>
+    </ul>
+
+    <h3>Channel Settings</h3>
+
+    <p>At the top of the editor, you can modify:</p>
+
+    <ul>
+        <li><strong>Name</strong> &mdash; The channel's display name</li>
+        <li><strong>Echo</strong> &mdash; The echo command</li>
+        <li><strong>Font Size</strong> &mdash; Per-channel font size (independent of the main
+        font size)</li>
+        <li><strong>Main Enable</strong> &mdash; Whether this channel's messages also show in
+        the Main tab</li>
+        <li><strong>Enable Links</strong> &mdash; Whether clickable item links are active</li>
+        <li><strong>PopOut</strong> &mdash; Whether to display this channel in a
+        <a href="#popout-windows">separate window</a></li>
+    </ul>
+
+    <h3>Events List</h3>
+
+    <p>Below the channel settings is a list of events, each displayed as a
+    <strong>collapsible header</strong> (<code>ImGui::CollapsingHeader</code>). The header
+    shows the event index and a preview of the pattern text (truncated to 40 characters).
+    Click it to expand and see the full event details.</p>
+
+    <p>Each event shows:</p>
+
+    <ul>
+        <li><strong>Enabled</strong> checkbox &mdash; Toggle the event on/off without deleting
+        it</li>
+        <li><strong>Remove Event</strong> button &mdash; Delete the event entirely</li>
+        <li><strong>Pattern</strong> input &mdash; The
+        <a href="chat-routing.html">Blech pattern</a> this event matches against</li>
+        <li><strong>Event Color</strong> picker &mdash; Default color for lines matching this
+        event. This is actually the color of filter index 0, which is auto-created if the
+        event has no filters. It serves as the fallback color when no other filter matches.</li>
+    </ul>
+
+    <h3>Filters</h3>
+
+    <p>Within each event, you can define filters. The first filter (index 0) is special &mdash;
+    it serves as the <strong>default color</strong> for the event and is controlled by the
+    "Event Color" picker above. User-defined filters start at index 1. Each filter has:</p>
+
+    <ul>
+        <li><strong>Pattern</strong> input &mdash; A string to match within the chat line</li>
+        <li><strong>Color picker</strong> &mdash; The color to apply when this filter matches</li>
+        <li><strong>Enabled</strong> toggle (<code>On</code>) &mdash; Turn the filter on/off</li>
+        <li><strong>Hidden</strong> toggle &mdash; Match the line but suppress its display
+        (see <a href="database.html">Database &amp; Settings</a> for how this is stored)</li>
+        <li><strong>Remove</strong> button (<code>X</code>) &mdash; Delete the filter</li>
+        <li><strong>Reorder arrows</strong> &mdash; Up arrow and down arrow buttons let you
+        move a filter higher or lower in the list. The up arrow appears on all filters except
+        the first user filter, and the down arrow appears on all except the last. Reordering
+        swaps the filter positions and updates their <code>filterIndex</code> values. Filters
+        are evaluated in order, so the position matters &mdash; the first matching filter
+        determines the color used for the line.</li>
+    </ul>
+
+    <h4>Add Filter and Token Reference</h4>
+
+    <p>The <strong>Add Filter</strong> button includes a tooltip (hover over it) that shows all
+    available <a href="chat-routing.html">tokens</a> you can use in filter patterns. These
+    tokens are placeholders that get replaced with actual character or NPC names at runtime:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Token</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>M3</code></td><td>Your character name</td></tr>
+            <tr><td><code>M1</code></td><td>Main assist name</td></tr>
+            <tr><td><code>PT1</code></td><td>Your pet's name</td></tr>
+            <tr><td><code>PT3</code></td><td>Any group member's pet name</td></tr>
+            <tr><td><code>GP1</code></td><td>Party member's name (any group member)</td></tr>
+            <tr><td><code>TK1</code></td><td>Main tank name</td></tr>
+            <tr><td><code>RL</code></td><td>Raid leader name</td></tr>
+            <tr><td><code>H1</code></td><td>Group healer (DRU, CLR, or SHM)</td></tr>
+            <tr><td><code>G1</code>&ndash;<code>G5</code></td><td>Party member in group slot 1 through 5</td></tr>
+            <tr><td><code>N3</code></td><td>NPC name</td></tr>
+            <tr><td><code>P3</code></td><td>PC (player character) name</td></tr>
+        </tbody>
+    </table>
+
+    <p>In addition to tokens, two prefix modifiers are available:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Modifier</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>NO2</code></td><td>Invert match. Place before a token or word to
+            <em>exclude</em> lines that match. For example, <code>NO2GP1</code> would exclude
+            lines from group members.</td></tr>
+            <tr><td><code>^</code></td><td>Anchor to start of line. For example,
+            <code>^You</code> only matches lines that begin with "You".</td></tr>
+        </tbody>
+    </table>
+
+    <p>Lua pattern syntax (<code>%d</code>, <code>%a</code>, etc.) is also supported in
+    filter strings for advanced matching. See
+    <a href="chat-routing.html">Chat Routing &amp; Tokens</a> for a full explanation of how
+    tokens and filters interact.</p>
+
+    <h3>Add Event</h3>
+
+    <p>At the bottom of the events list is an input field and button to add a new event. You
+    type a <a href="chat-routing.html">Blech pattern</a> and click Add.</p>
+
+    <h3>Saving Changes</h3>
+
+    <p>Clicking <strong>Save</strong> in the channel editor triggers several actions:</p>
+
+    <ol>
+        <li><strong>Unregisters</strong> all existing Blech events for this channel</li>
+        <li><strong>Re-registers</strong> the events with updated patterns</li>
+        <li><strong>Sorts</strong> the channel list</li>
+        <li><strong>Saves</strong> everything to the <a href="database.html">database</a></li>
+    </ol>
+
+    <h2>Font Size Management</h2>
+
+    <p>MQMyChat has two levels of font size control:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Level</th>
+                <th>Setting</th>
+                <th>Scope</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Global</td>
+                <td><code>settings.mainFontSize</code></td>
+                <td>Applies to the Main tab console</td>
+            </tr>
+            <tr>
+                <td>Per-channel</td>
+                <td><code>channel.fontSize</code></td>
+                <td>Applies to a specific channel's console</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>The valid range is <strong>8 to 48 pixels</strong>.</p>
+
+    <h3>Sync and Apply</h3>
+
+    <p>Two helper methods manage font sizes:</p>
+
+    <ul>
+        <li><code>SyncFontSizes()</code> &mdash; Reads the current pixel heights
+        <em>back from Zep</em> into the settings structures. This is important because Zep's
+        Ctrl+/- zoom can change font sizes outside of MQMyChat's knowledge. Sync is called
+        before saving so that zoom changes are persisted.</li>
+        <li><code>ApplyFontSizes()</code> &mdash; Pushes the stored font sizes from settings
+        <em>into Zep</em>. Called after loading settings from the database to apply your saved
+        sizes to the console widgets.</li>
+    </ul>
+
+    <h2 id="theme-system">Theme System</h2>
+
+    <p>MQMyChat includes <strong>11 built-in themes</strong> defined in <code>Theme.h</code>.
+    Each theme is a set of ImGui color overrides that change the look and feel of the
+    windows.</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Theme Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Grape</td></tr>
+            <tr><td>Red</td></tr>
+            <tr><td>Burnt</td></tr>
+            <tr><td>Monochrome</td></tr>
+            <tr><td>Lime</td></tr>
+            <tr><td>Night</td></tr>
+            <tr><td>CottonCandy</td></tr>
+            <tr><td>BlackDevil</td></tr>
+            <tr><td>MoonLight</td></tr>
+            <tr><td>EnemyMouse</td></tr>
+            <tr><td>Default</td></tr>
+        </tbody>
+    </table>
+
+    <h3>How Themes Are Applied</h3>
+
+    <p>Themes are applied and reset around each window render:</p>
+
+    <pre><code>auto oldStyle = ImGuiTheme::ApplyTheme(themeIndex);
+ImGui::Begin("My Chat - Main##MQMyChat_...", ...);
+// ... render window contents ...
+ImGui::End();
+ImGuiTheme::ResetTheme(oldStyle);</code></pre>
+
+    <p>The <code>ApplyTheme()</code> call saves the current style, then applies the theme's
+    color overrides. It returns the saved style so that <code>ResetTheme()</code> can restore
+    it afterward. This save-and-restore pattern means the theme only affects MQMyChat's
+    windows &mdash; other plugins' ImGui windows are not changed.</p>
+
+    <h3>Theme Picker</h3>
+
+    <p>The theme picker is accessed through the <strong>Options menu</strong> in the menu bar.
+    It is drawn by <code>ImGuiTheme::DrawThemePicker()</code>, which shows a dropdown with all
+    available themes. Selecting a theme immediately applies it. The selected theme index is
+    stored in the <a href="database.html"><code>global_settings</code></a> table as
+    <code>themeIdx</code>.</p>
+
+    <h2>Rendering Flow Summary</h2>
+
+    <p>Here is the complete rendering flow that happens every frame:</p>
+
+    <div class="diagram">OnUpdateImGui() [MQMyChat.cpp]
+    │
+    ├─ RenderMainWindow()
+    │   ├─ ApplyTheme()
+    │   ├─ Menu Bar (Lock, Settings, Options, Channels, Links, PopOut, Presets)
+    │   ├─ Tab Bar (##ChatTabs, Reorderable)
+    │   │   ├─ "Main" tab → DrawMainConsole()
+    │   │   └─ Channel tabs → DrawConsole() for each (skip popOut channels)
+    │   ├─ DetectTabReorder() → FlushTabOrder() after 3s debounce
+    │   └─ ResetTheme()
+    │
+    ├─ RenderPopOutWindows()
+    │   ├─ ApplyTheme() (once for all pop-outs)
+    │   ├─ For each popOut channel:
+    │   │   ├─ Lock + Settings (Edit) buttons
+    │   │   └─ DrawConsole()
+    │   └─ ResetTheme()
+    │
+    ├─ RenderConfigGUI() [if open]
+    │   ├─ ApplyTheme()
+    │   ├─ Channel table (Enabled, Name, Echo, Events, Actions)
+    │   ├─ Add Channel form
+    │   ├─ Save All button
+    │   └─ ResetTheme()
+    │
+    └─ RenderEditChannelGUI() [if open]
+        ├─ ApplyTheme()
+        ├─ Channel settings (Name, Echo, Font Size, etc.)
+        ├─ Events list with collapsible headers
+        │   └─ Filters per event (pattern, color, toggles, reorder arrows)
+        ├─ Add Event input
+        ├─ Save button → unregister/register Blech events
+        ├─ Close button
+        └─ ResetTheme()</div>
+
+    <p>For how the data shown in these windows is stored and loaded, see
+    <a href="database.html">Database &amp; Settings</a>. For how chat lines arrive and get
+    routed to channels, see <a href="chat-routing.html">Chat Routing &amp; Tokens</a>. For
+    how to add new features to the rendering layer, see
+    <a href="extending.html">How to Extend</a>.</p>
+
+    <div class="page-nav">
+        <strong>Next:</strong> <a href="commands-tlo.html">Commands &amp; TLO</a> &mdash;
+        slash commands for controlling the plugin and the TLO interface for macros.
+    </div>
+</main>
+
+</body>
+</html>

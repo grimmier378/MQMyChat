@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commands &amp; TLO - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html" class="active">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>Commands &amp; TLO API</h1>
+
+    <p>MQMyChat exposes two interfaces for controlling the plugin from outside its GUI: the
+    <code>/mychat</code> slash command and the <code>${MyChat}</code> Top-Level Object (TLO).
+    This page covers both in detail so you can drive the plugin from macros, Lua scripts, or
+    the MQ command line.</p>
+
+    <div class="note">
+        <strong>New to MacroQuest?</strong> A <strong>slash command</strong> is text you type
+        into the EQ chat window starting with <code>/</code>. MacroQuest intercepts it before
+        EQ sees it. A <strong>TLO</strong> (Top-Level Object) is how macros and Lua scripts
+        read live data from plugins &mdash; think of it as a read-only API you access with
+        <code>${PluginName.Property}</code> syntax.
+    </div>
+
+    <h2>The /mychat Command</h2>
+
+    <p>The command is registered during plugin startup inside <code>InitializePlugin()</code>
+    (MQMyChat.cpp, starting at line 25):</p>
+
+<pre><code>PLUGIN_API void InitializePlugin()
+{
+    g_chatEngine = new MyChatEngine();
+    g_chatEngine-&gt;Initialize();
+    AddCommand("/mychat", MyChatCommand);
+    RegisterMyChatTLO();
+}</code></pre>
+
+    <p><code>AddCommand</code> is a MacroQuest API that maps a slash command string to a C++
+    callback function. When you type <code>/mychat</code> in the EQ chat window (or in a
+    macro), MacroQuest intercepts it and calls <code>MyChatCommand()</code> with everything
+    after <code>/mychat</code> as a single string. For example, typing
+    <code>/mychat send Tells hello</code> passes the string <code>"send Tells hello"</code>
+    to the callback.</p>
+
+    <h3>How Argument Parsing Works</h3>
+
+    <p>Inside <code>MyChatCommand()</code> (line 100), the plugin uses two MacroQuest
+    helpers to pull arguments out of the string:</p>
+
+    <ul>
+        <li><code>GetArg(dest, line, n)</code> &mdash; copies the <em>n</em>th
+        whitespace-delimited token from <code>line</code> into the <code>dest</code> buffer.
+        Argument numbering starts at 1.</li>
+        <li><code>GetNextArg(line, n)</code> &mdash; returns a pointer to the remainder of
+        <code>line</code> after skipping <em>n</em> tokens. Useful for grabbing a free-form
+        message that may contain spaces.</li>
+    </ul>
+
+    <p>Each subcommand is matched with <code>ci_equals()</code>, which is a
+    case-insensitive string comparison (so <code>/mychat SHOW</code> works just as well as
+    <code>/mychat show</code>). The first match wins; if nothing matches, the plugin
+    prints a usage message listing every valid subcommand.</p>
+
+    <h3>Full Command Reference</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Subcommand</th>
+                <th>Usage</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>(none) or <code>show</code></td>
+                <td><code>/mychat</code> or <code>/mychat show</code></td>
+                <td>Show the main window. Sets <code>showMainWindow = true</code>.</td>
+            </tr>
+            <tr>
+                <td><code>hide</code></td>
+                <td><code>/mychat hide</code></td>
+                <td>Hide the main window. Sets <code>showMainWindow = false</code>.</td>
+            </tr>
+            <tr>
+                <td><code>send</code></td>
+                <td><code>/mychat send &lt;channel&gt; &lt;message&gt;</code></td>
+                <td>Send a message to the named channel. If the channel does not exist yet,
+                it is created automatically. The message is everything after the channel
+                name.</td>
+            </tr>
+            <tr>
+                <td><code>clear</code></td>
+                <td><code>/mychat clear</code></td>
+                <td>Clear the main console (all text is removed).</td>
+            </tr>
+            <tr>
+                <td><code>clear &lt;channel&gt;</code></td>
+                <td><code>/mychat clear Tells</code></td>
+                <td>Clear a specific channel by name. The name lookup is case-insensitive.
+                If the channel is not found, an error message is printed.</td>
+            </tr>
+            <tr>
+                <td><code>config</code></td>
+                <td><code>/mychat config</code></td>
+                <td>Toggle the configuration GUI on or off. Flips
+                <code>showConfigGUI</code>.</td>
+            </tr>
+            <tr>
+                <td><code>reload</code></td>
+                <td><code>/mychat reload</code></td>
+                <td>Reload settings from the database. Calls
+                <code>UnloadCharacterSettings()</code> followed by
+                <code>LoadCharacterSettings()</code>.</td>
+            </tr>
+            <tr>
+                <td><code>lock</code></td>
+                <td><code>/mychat lock</code></td>
+                <td>Lock the window position and size so it cannot be accidentally moved.</td>
+            </tr>
+            <tr>
+                <td><code>unlock</code></td>
+                <td><code>/mychat unlock</code></td>
+                <td>Unlock the window so it can be repositioned and resized again.</td>
+            </tr>
+            <tr>
+                <td><code>preset</code></td>
+                <td><code>/mychat preset Default</code></td>
+                <td>Switch to a named preset. The sequence is: Save current settings,
+                SetActivePreset, Unload settings, Load settings. If the preset name is not
+                found, an error message is printed.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Example: Sending a Message from the Command Line</h3>
+
+<pre><code>/mychat send Tells Hey there, how are you doing?</code></pre>
+
+    <p>This sends the text "Hey there, how are you doing?" to the channel named "Tells".
+    <code>GetArg</code> grabs "Tells" as argument 2, and <code>GetNextArg(szLine, 2)</code>
+    returns everything after it as the message body.</p>
+
+    <h3>Example: Switching Presets</h3>
+
+<pre><code>/mychat preset Raiding</code></pre>
+
+    <p>This saves your current channel settings, switches the active preset in the
+    <a href="database.html">database</a> to "Raiding", then reloads. All your channel
+    tabs, events, and filters change to match that preset. See the
+    <a href="database.html">Database &amp; Settings</a> page for more on how presets
+    work.</p>
+
+    <h2>TLO: MyChat</h2>
+
+    <p>A <strong>Top-Level Object</strong> (TLO) lets macros and Lua scripts read plugin
+    state using the <code>${...}</code> syntax. MQMyChat registers the
+    <code>MyChat</code> TLO so that other tools can inspect channels, check the plugin
+    version, and send messages programmatically.</p>
+
+    <p>If you have used MQ2 macros before, you have already seen TLOs like
+    <code>${Me.Name}</code> or <code>${Target.Level}</code>. The <code>MyChat</code> TLO
+    works the same way &mdash; it gives you a dot-notation path to read plugin data. From
+    Lua, the equivalent is <code>mq.TLO.MyChat.PropertyName()</code>.</p>
+
+    <h3>How the TLO is Registered</h3>
+
+    <p>In <code>MyChatTLO.cpp</code>, <code>RegisterMyChatTLO()</code> creates two custom
+    <strong>MQ2Type</strong> subclasses (think of these as data type definitions that tell
+    MacroQuest what properties an object has) and hooks the TLO name:</p>
+
+<pre><code>void RegisterMyChatTLO()
+{
+    pMyChatChannelType = new MyChatChannelType();
+    pMyChatType = new MyChatType();
+    AddTopLevelObject("MyChat", MyChatType::dataMyChat);
+}</code></pre>
+
+    <p><code>AddTopLevelObject</code> tells MacroQuest: "whenever someone writes
+    <code>${MyChat...}</code>, call <code>MyChatType::dataMyChat</code> to resolve it."
+    The TLO is unregistered in <code>ShutdownPlugin()</code> via
+    <code>UnregisterMyChatTLO()</code>, which calls <code>RemoveTopLevelObject</code> and
+    deletes both type objects.</p>
+
+    <p>Two custom <code>MQ2Type</code> subclasses power the TLO. An MQ2Type is a C++ class
+    that tells MacroQuest how to resolve dot-notation access on an object &mdash; for
+    example, what to return when someone writes <code>.Version</code> or
+    <code>.Channel[...]</code>:</p>
+    <ul>
+        <li><strong>MyChatType</strong> &mdash; the top-level type. Handles
+        <code>${MyChat.Version}</code>, <code>${MyChat.Channel[...]}</code>, etc.</li>
+        <li><strong>MyChatChannelType</strong> &mdash; returned when you access a channel.
+        Provides per-channel properties like Name, Enabled, and Echo.</li>
+    </ul>
+
+    <h3>MyChat Type Members</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Member</th>
+                <th>Return Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>${MyChat}</code></td>
+                <td>string</td>
+                <td>Returns <code>"MQMyChat"</code> (via the <code>ToString</code>
+                override). Useful for checking if the plugin is loaded.</td>
+            </tr>
+            <tr>
+                <td><code>${MyChat.Version}</code></td>
+                <td>float</td>
+                <td>Returns <code>0.1</code> &mdash; the current TLO version number.</td>
+            </tr>
+            <tr>
+                <td><code>${MyChat.Channel[name]}</code></td>
+                <td>MyChatChannel</td>
+                <td>Look up a channel by its display name (case-insensitive). Returns a
+                MyChatChannel object if found.</td>
+            </tr>
+            <tr>
+                <td><code>${MyChat.Channel[id]}</code></td>
+                <td>MyChatChannel</td>
+                <td>Look up a channel by its numeric ID. The code tries to parse the index
+                as a number first; if that succeeds, it does an ID lookup instead of a name
+                lookup.</td>
+            </tr>
+            <tr>
+                <td><code>${MyChat.ChannelCount}</code></td>
+                <td>int</td>
+                <td>Returns the total number of channels currently loaded.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>MyChat Type Methods</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Usage</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Send</code></td>
+                <td><code>${MyChat.Send[ChannelName,message text]}</code></td>
+                <td>Sends a message to the named channel. Creates the channel if it does not
+                exist. Returns <code>true</code> on success, <code>false</code> if the input
+                could not be parsed.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>How Send Parses Its Input</h4>
+
+    <p>The <code>Send</code> method receives the entire content between the square brackets
+    as a single string. It splits on the <strong>first comma</strong> to separate the
+    channel name from the message:</p>
+
+<pre><code>std::string input(Index);
+size_t sep = input.find(',');
+if (sep != std::string::npos)
+{
+    std::string channel = input.substr(0, sep);
+    std::string message = input.substr(sep + 1);
+    // trim leading/trailing spaces from channel name
+    // trim leading spaces from message
+    g_chatEngine-&gt;SendToChannel(channel, message);
+}</code></pre>
+
+    <p>Key points:</p>
+    <ul>
+        <li>The comma is the delimiter. If there is no comma, the method returns
+        <code>false</code>.</li>
+        <li>Whitespace is trimmed from both ends of the channel name and from the start of
+        the message.</li>
+        <li>The message itself can contain commas &mdash; only the first comma is treated as
+        the separator.</li>
+    </ul>
+
+    <h3>MyChatChannel Type Members</h3>
+
+    <p>When you access a channel via <code>${MyChat.Channel[...]}</code>, you get a
+    <code>MyChatChannel</code> object. Here are the properties you can read:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Member</th>
+                <th>Return Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Name</code></td>
+                <td>string</td>
+                <td>The channel's display name (e.g., "Tells", "Combat").</td>
+            </tr>
+            <tr>
+                <td><code>ID</code></td>
+                <td>int</td>
+                <td>The channel's numeric ID.</td>
+            </tr>
+            <tr>
+                <td><code>Enabled</code></td>
+                <td>bool</td>
+                <td>Whether the channel is active and processing events.</td>
+            </tr>
+            <tr>
+                <td><code>TabOrder</code></td>
+                <td>int</td>
+                <td>The channel's position in the tab bar (lower numbers appear first).</td>
+            </tr>
+            <tr>
+                <td><code>PopOut</code></td>
+                <td>bool</td>
+                <td>Whether the channel is displayed in its own separate window instead of
+                as a tab in the main window.</td>
+            </tr>
+            <tr>
+                <td><code>Echo</code></td>
+                <td>string</td>
+                <td>The command prefix used when typing messages into the channel's input
+                box (e.g., <code>/tell</code>, <code>/gu</code>).</td>
+            </tr>
+            <tr>
+                <td><code>MainEnable</code></td>
+                <td>bool</td>
+                <td>Whether messages matching this channel are also echoed to the Main
+                tab.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>MyChatChannel ToString</h3>
+
+    <p>If you evaluate a channel object directly (without accessing a member), its
+    <code>ToString</code> returns the channel name. For example,
+    <code>${MyChat.Channel[0]}</code> might return <code>"Consider"</code>.</p>
+
+    <h2>Lua Script Integration</h2>
+
+    <p>Lua scripts running inside MacroQuest can use the TLO just like macros can. The
+    <a href="https://github.com/grimmier378/MyUI" target="_blank">MyUI</a> framework's
+    <code>Utils.PrintOutput()</code> function (in
+    <code>MyUI/lib/common.lua</code>) demonstrates the recommended pattern: check if the
+    plugin is loaded, and fall back gracefully if it is not.</p>
+
+    <h3>The PrintOutput Pattern</h3>
+
+    <p><code>PrintOutput()</code> works like this:</p>
+    <ol>
+        <li>Check if the MQMyChat plugin is loaded by evaluating
+        <code>mq.TLO.MyChat()</code>.</li>
+        <li>If loaded, call <code>mq.TLO.MyChat.Send("channel,message")</code> to route
+        the message through MQMyChat.</li>
+        <li>If the plugin is not loaded, fall back to a Lua-based MyChat handler or
+        <code>print()</code>.</li>
+    </ol>
+
+    <p>This pattern ensures your script works whether or not the user has MQMyChat
+    installed.</p>
+
+    <h3>Example: Using the TLO from Lua</h3>
+
+<pre><code>local mq = require('mq')
+
+-- Check if the plugin is loaded
+if mq.TLO.MyChat() ~= nil then
+    -- Send a message to a channel
+    mq.TLO.MyChat.Send("Tells,Hello from Lua!")
+
+    -- Read channel info
+    local ch = mq.TLO.MyChat.Channel("Tells")
+    if ch() then
+        print("Channel name:", ch.Name())
+        print("Channel enabled:", ch.Enabled())
+        print("Tab order:", ch.TabOrder())
+    end
+
+    -- Check total channel count
+    print("Total channels:", mq.TLO.MyChat.ChannelCount())
+
+    -- Look up a channel by numeric ID
+    local ch0 = mq.TLO.MyChat.Channel(0)
+    if ch0() then
+        print("Channel 0 is:", ch0.Name())
+    end
+else
+    -- Plugin not loaded, fall back
+    print("MQMyChat not loaded, using default output")
+end</code></pre>
+
+    <h3>Example: Conditional Output Helper</h3>
+
+    <p>Here is a small helper function you can drop into your own Lua scripts:</p>
+
+<pre><code>local mq = require('mq')
+
+local function sendToChannel(channelName, message)
+    if mq.TLO.MyChat() ~= nil then
+        mq.TLO.MyChat.Send(channelName .. "," .. message)
+        return true
+    end
+    print(message)
+    return false
+end
+
+-- Usage
+sendToChannel("Combat", "You crit for 9999 damage!")
+sendToChannel("Tells", "Reminder: rebuff in 5 minutes")</code></pre>
+
+    <div class="note">
+        <strong>Note:</strong> The <code>Send</code> method splits on the first comma, so
+        your channel name must not contain commas. The message itself can contain commas
+        freely.
+    </div>
+
+    <div class="note">
+        <strong>How chat reaches MQMyChat:</strong> The plugin hooks two MacroQuest
+        callbacks: <code>OnIncomingChat</code> (for chat arriving from the EQ server) and
+        <code>OnWriteChatColor</code> (for text written to the MQ console by plugins).
+        Both feed incoming lines into the Blech pattern engine, which routes them to the
+        appropriate channel. The <code>Send</code> method bypasses this routing entirely
+        and writes directly to a channel's console.
+    </div>
+
+    <h3>Macro (MQ2) Syntax</h3>
+
+    <p>If you are writing a traditional MQ2 macro instead of Lua, the same TLO works with
+    the standard <code>${...}</code> syntax:</p>
+
+<pre><code>/echo ${MyChat.Version}
+/echo ${MyChat.ChannelCount}
+/echo ${MyChat.Channel[Tells].Name}
+/echo ${MyChat.Channel[Tells].Enabled}
+/echo ${MyChat.Send[Combat,You scored a critical hit!]}</code></pre>
+
+    <h2>Where to Go Next</h2>
+
+    <ul>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a> &mdash; understand
+        how messages are matched to channels and how filter tokens like M3, N3, and GP1
+        work.</li>
+        <li><a href="extending.html">How to Extend</a> &mdash; step-by-step tutorials for
+        adding new commands, TLO members, and more.</li>
+        <li><a href="database.html">Database &amp; Settings</a> &mdash; learn about
+        presets and how channel configuration is stored.</li>
+    </ul>
+</main>
+
+</body>
+</html>

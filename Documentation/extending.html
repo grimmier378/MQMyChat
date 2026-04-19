@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Extend - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html" class="active">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>How to Extend MQMyChat</h1>
+
+    <p>This page walks you through five common modifications, step by step. Each tutorial
+    builds one small feature from scratch so you can see the pattern, then apply it to your
+    own ideas.</p>
+
+    <p>Before you begin, make sure you can build the plugin from source and load it in-game.
+    A text editor with C++ syntax highlighting is helpful but not required.</p>
+
+    <h2>Tutorial 1: Adding a New Default Channel</h2>
+
+    <div class="note">
+        <strong>What you will learn:</strong> How the database stores channels, events, and
+        filters. How to write SQL INSERT statements that follow the existing pattern. How
+        channels, events, and filters relate to each other via foreign keys.
+    </div>
+
+    <p>Default channels are the ones that appear when a user loads MQMyChat for the first
+    time (or creates a new preset). They live in the SQLite database and are created by
+    <code>SeedDefaultChannels()</code> in <strong>MyChatDatabase.cpp</strong> (line 617).
+    This function runs a series of SQL INSERT statements wrapped in a transaction (all
+    succeed or all fail together).</p>
+
+    <p>We will add a "Pets" channel that catches pet-related messages like "Your pet has
+    been slain" and "begins to follow you".</p>
+
+    <h3>Step 1: Understand the Structure</h3>
+
+    <p>Every default channel needs three things inserted into the database:</p>
+    <ol>
+        <li>A <strong>channel</strong> row &mdash; the channel itself (name, ID, settings).</li>
+        <li>One or more <strong>event</strong> rows &mdash; Blech patterns that decide which
+        chat lines belong to this channel.</li>
+        <li>One or more <strong>filter</strong> rows per event &mdash; color rules that
+        control how matched lines are displayed.</li>
+    </ol>
+
+    <h3>Step 2: Pick a Unique channel_id</h3>
+
+    <p>Look at the existing channels in <code>SeedDefaultChannels()</code>. The built-in
+    ones use IDs 0, 2, 3, and so on. Pick an ID that is not already taken. For this
+    example, we will use <strong>20</strong>.</p>
+
+    <h3>Step 3: Add the Channel INSERT</h3>
+
+    <p>Open <strong>MyChatDatabase.cpp</strong> and scroll to the end of
+    <code>SeedDefaultChannels()</code>, just before the <code>ExecSQL("COMMIT")</code> line.
+    Add:</p>
+
+<pre><code>run(fmt::format(
+    "INSERT INTO channels (preset_id, channel_id, name, enabled, echo, "
+    "main_enable, enable_links, pop_out, locked, scale, main_font_size, tab_order) "
+    "VALUES ({}, 20, 'Pets', 1, '/pet', 0, 0, 0, 0, 1.0, 16, 10)",
+    presetId));</code></pre>
+
+    <p>Here is what each value means:</p>
+    <ul>
+        <li><code>preset_id</code> &mdash; passed in as a parameter, ties this channel to
+        the preset being created.</li>
+        <li><code>channel_id = 20</code> &mdash; our unique ID.</li>
+        <li><code>name = 'Pets'</code> &mdash; the display name shown on the tab.</li>
+        <li><code>enabled = 1</code> &mdash; channel is active by default.</li>
+        <li><code>echo = '/pet'</code> &mdash; command prefix for typed messages.</li>
+        <li><code>main_enable = 0</code> &mdash; do not echo pet messages to the Main
+        tab.</li>
+        <li><code>tab_order = 10</code> &mdash; position in the tab bar (higher = further
+        right).</li>
+    </ul>
+
+    <h3>Step 4: Add Events with Blech Patterns</h3>
+
+    <p>Blech patterns use <code>#*#</code> as a wildcard that matches any sequence of
+    characters (similar to <code>*</code> in a glob). Add two events for pet messages:</p>
+
+<pre><code>run(fmt::format(
+    "INSERT INTO events (channel_row_id, event_index, event_string, enabled) "
+    "VALUES ((SELECT id FROM channels WHERE preset_id = {} AND channel_id = 20), "
+    "1, '#*#Your pet#*#', 1)",
+    presetId));
+
+run(fmt::format(
+    "INSERT INTO events (channel_row_id, event_index, event_string, enabled) "
+    "VALUES ((SELECT id FROM channels WHERE preset_id = {} AND channel_id = 20), "
+    "2, '#*#begins to follow you#*#', 1)",
+    presetId));</code></pre>
+
+    <p>The <code>channel_row_id</code> subquery looks up the database row ID (not the
+    channel_id) for our new channel within the current preset. This is necessary because
+    SQLite auto-generates the row <code>id</code> when we insert the channel, so we cannot
+    know it in advance &mdash; the subquery finds it at insert time. The
+    <code>event_index</code> must be unique within the channel (1, 2, 3...).</p>
+
+    <h3>Step 5: Add Filters with Colors</h3>
+
+    <p>Each event needs at least one filter. The default filter (empty
+    <code>filter_string</code>, index 0) controls the base color for all lines matching
+    that event. Colors are RGBA floats from 0.0 to 1.0:</p>
+
+<pre><code>run(fmt::format(
+    "INSERT INTO filters (event_row_id, filter_index, filter_string, "
+    "color_r, color_g, color_b, color_a, enabled, hidden) "
+    "VALUES ((SELECT e.id FROM events e JOIN channels c ON e.channel_row_id = c.id "
+    "WHERE c.preset_id = {} AND c.channel_id = 20 AND e.event_index = 1), "
+    "0, '', 0.4, 0.8, 0.2, 1.0, 1, 0)",
+    presetId));
+
+run(fmt::format(
+    "INSERT INTO filters (event_row_id, filter_index, filter_string, "
+    "color_r, color_g, color_b, color_a, enabled, hidden) "
+    "VALUES ((SELECT e.id FROM events e JOIN channels c ON e.channel_row_id = c.id "
+    "WHERE c.preset_id = {} AND c.channel_id = 20 AND e.event_index = 2), "
+    "0, '', 0.2, 0.7, 0.5, 1.0, 1, 0)",
+    presetId));</code></pre>
+
+    <p>The color <code>(0.4, 0.8, 0.2, 1.0)</code> is a bright green. You can add
+    additional filters with a non-empty <code>filter_string</code> to colorize specific
+    sub-patterns differently (see the Combat channel in the existing code for examples
+    with <code>^You</code>, <code>^N3</code>, etc.).</p>
+
+    <h3>Step 6: Verify It Works</h3>
+
+    <p>Build the plugin and load it in-game. To see your new channel, you need to trigger
+    a fresh preset creation (existing presets are not modified). The easiest way:</p>
+    <ol>
+        <li>Open the Presets menu in the main window.</li>
+        <li>Type a new name (e.g., "TestPets") and click "Save As New".</li>
+        <li>Switch to the new preset. Your "Pets" tab should appear.</li>
+        <li>Test it by triggering a pet-related message in-game (e.g., <code>/pet sit</code>
+        and look for pet response text).</li>
+    </ol>
+
+    <div class="note">
+        <strong>Note:</strong> This only affects new presets. Existing users keep their
+        current channels. If you want to add a channel to an existing user's setup, you
+        would need a database migration or have them create a new preset.
+    </div>
+
+    <h2>Tutorial 2: Adding a New Token</h2>
+
+    <div class="note">
+        <strong>What you will learn:</strong> How the token substitution system works. How
+        to add a new token to the if/elseif chain. Why tokens are mutually exclusive (each
+        filter uses at most one). How to handle game state safely with null checks.
+    </div>
+
+    <p>Tokens are placeholder strings used in filter patterns. When a chat line is being
+    checked against a filter, the plugin replaces tokens with live game data before
+    comparing. For example, <code>M3</code> becomes your character's name, and
+    <code>N3</code> becomes the NPC name extracted from the line. This lets you write
+    a single filter like <code>^M3</code> that means "lines starting with MY name"
+    without hardcoding any character name.</p>
+
+    <p>We will add a <code>ZN</code> token that substitutes the current zone name.</p>
+
+    <h3>Step 1: Open SubstituteTokens()</h3>
+
+    <p>In <strong>MQMyChat.cpp</strong>, find <code>SubstituteTokens()</code> (line 788).
+    This function takes a pattern string and the original chat line, and returns the
+    pattern with all tokens replaced.</p>
+
+    <h3>Step 2: Understand the if/elseif Chain</h3>
+
+    <p>The function works as a chain of independent checks. Each block looks for a
+    specific token in the pattern string. The first match replaces the token and
+    returns immediately &mdash; tokens are mutually exclusive, meaning a single filter
+    pattern should only contain one token. This is because the function returns as
+    soon as it processes the first token it finds, so a second token in the same
+    pattern would never be substituted.</p>
+
+<pre><code>if (replace("M3", pLocalPlayer-&gt;Name)) return result;
+
+if (result.find("PT1") != std::string::npos)
+{
+    if (replace("PT1", GetPetName())) return result;
+}
+
+if (result.find("N3") != std::string::npos)
+{
+    // ... more complex logic to extract NPC name ...
+}
+
+// ... more tokens ...</code></pre>
+
+    <h3>Step 3: Add Your Token Block</h3>
+
+    <p>Add a new block at the end of the chain, just before the final
+    <code>return result;</code>:</p>
+
+<pre><code>if (result.find("ZN") != std::string::npos)
+{
+    std::string zoneName = "Unknown";
+    if (pZoneInfo)
+        zoneName = pZoneInfo-&gt;LongName;
+    replace("ZN", zoneName);
+    return result;
+}</code></pre>
+
+    <h3>Step 4: Test Your Token</h3>
+
+    <p>Build and load the plugin. Open the channel editor for any channel and add a new
+    filter with the pattern <code>ZN</code>. Now, when a chat line is checked against
+    this filter, <code>ZN</code> will be replaced with the actual zone name (e.g.,
+    "East Commonlands"). If the line contains that zone name, the filter matches and the
+    line gets that filter's color. You can verify this by going to a zone and triggering
+    a chat message that mentions the zone name.</p>
+
+    <div class="warning">
+        <strong>Important:</strong> If your token needs to look up a spawn by name and
+        the name contains spaces, convert spaces to underscores before calling
+        <code>GetSpawnByPartialName()</code>. EQ stores spawn names internally with
+        underscores (e.g., <code>Selephra_Giztral</code>), while
+        <code>DisplayedName</code> uses spaces. See the <code>N3</code> and
+        <code>PT3</code> token implementations for examples of this conversion.
+    </div>
+
+    <h3>Existing Tokens Reference</h3>
+
+    <p>For context, here are the tokens already defined in <code>SubstituteTokens()</code>.
+    See <a href="chat-routing.html">Chat Routing &amp; Tokens</a> for full details.</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Token</th>
+                <th>Substitution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>M3</code></td><td>Your character name</td></tr>
+            <tr><td><code>PT1</code></td><td>Your pet's name</td></tr>
+            <tr><td><code>PT3</code></td><td>Group member's pet name (or your pet)</td></tr>
+            <tr><td><code>M1</code></td><td>Main Assist name</td></tr>
+            <tr><td><code>TK1</code></td><td>Main Tank name</td></tr>
+            <tr><td><code>P3</code></td><td>PC name extracted from line</td></tr>
+            <tr><td><code>N3</code></td><td>NPC name extracted from line</td></tr>
+            <tr><td><code>RL</code></td><td>Raid leader name</td></tr>
+            <tr><td><code>G1</code>&ndash;<code>G5</code></td><td>Group member 1-5 name</td></tr>
+            <tr><td><code>H1</code></td><td>Group healer name (Clr/Dru/Shm)</td></tr>
+            <tr><td><code>GP1</code></td><td>Any group member (tries each)</td></tr>
+        </tbody>
+    </table>
+
+    <p>In addition to tokens, filter patterns support two prefix modifiers:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Prefix</th>
+                <th>Effect</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>NO2</code></td><td>Invert the match. Place before a token or
+            word to exclude lines that contain it. For example, <code>NO2PT1</code>
+            matches lines that do NOT contain your pet's name. Handled by
+            <code>MatchFilter()</code> in MQMyChat.cpp.</td></tr>
+            <tr><td><code>^</code></td><td>Anchor to the start of the line. For example,
+            <code>^You</code> matches only lines that begin with "You". Handled by
+            <code>PatternFind()</code> in MQMyChat.cpp.</td></tr>
+        </tbody>
+    </table>
+
+    <p>Filter patterns also support Lua string patterns (e.g., <code>%d+%.?$</code> to
+    match numbers at the end of a line). The plugin auto-detects Lua patterns by looking
+    for the <code>%</code> escape character.</p>
+
+    <h2>Tutorial 3: Adding a New /mychat Subcommand</h2>
+
+    <div class="note">
+        <strong>What you will learn:</strong> How the command dispatcher works (sequential
+        <code>ci_equals</code> checks). How to use <code>GetArg</code> and
+        <code>GetIntFromString</code> to parse arguments. How to validate input and print
+        feedback with <code>WriteChatf</code>.
+    </div>
+
+    <p>We will add <code>/mychat font &lt;size&gt;</code> to change the main window font
+    size from the command line.</p>
+
+    <h3>Step 1: Open MyChatCommand()</h3>
+
+    <p>In <strong>MQMyChat.cpp</strong>, find <code>MyChatCommand()</code> (line 100).
+    All subcommands are handled by sequential <code>if (ci_equals(...))</code> blocks.</p>
+
+    <h3>Step 2: Add Your Block</h3>
+
+    <p>Add this new block after the existing <code>preset</code> block and before the
+    final "Unknown command" message:</p>
+
+<pre><code>if (ci_equals(arg, "font"))
+{
+    char sizeStr[MAX_STRING] = {};
+    GetArg(sizeStr, szLine, 2);
+    if (sizeStr[0] == '\0')
+    {
+        WriteChatf("\at[MQMyChat]\ax Usage: /mychat font &lt;size&gt;");
+        WriteChatf("\at[MQMyChat]\ax Current font size: %d",
+            g_chatEngine-&gt;settings.mainFontSize);
+        return;
+    }
+
+    int newSize = GetIntFromString(sizeStr, 0);
+    if (newSize &lt; 8 || newSize &gt; 48)
+    {
+        WriteChatf("\at[MQMyChat]\ax Font size must be between 8 and 48.");
+        return;
+    }
+
+    g_chatEngine-&gt;settings.mainFontSize = newSize;
+    WriteChatf("\at[MQMyChat]\ax Main font size set to %d.", newSize);
+    return;
+}</code></pre>
+
+    <h3>Step 3: Update the Usage Message</h3>
+
+    <p>Find the "Unknown command" line at the bottom of <code>MyChatCommand()</code> and
+    add <code>font</code> to the list of valid subcommands:</p>
+
+<pre><code>WriteChatf("\at[MQMyChat]\ax Usage: /mychat "
+    "[show|hide|send|clear|config|reload|lock|unlock|preset|font]");</code></pre>
+
+    <h3>Step 4: Test It</h3>
+
+    <p>Build and load the plugin. Try these commands in the EQ chat window:</p>
+
+<pre><code>/mychat font
+/mychat font 20
+/mychat font 5
+/mychat font 100</code></pre>
+
+    <p>The first should print the current font size. The second should change it to 20.
+    The third and fourth should print an error because 5 and 100 are outside the valid
+    range (8-48).</p>
+
+    <h3>How It Works</h3>
+
+    <ul>
+        <li><code>GetArg(sizeStr, szLine, 2)</code> grabs the second argument (the font
+        size number). <code>GetArg</code> uses 1-based indexing, so argument 1 is "font"
+        and argument 2 is the size.</li>
+        <li><code>ci_equals(arg, "font")</code> does case-insensitive matching, so
+        <code>/mychat Font 20</code> and <code>/mychat FONT 20</code> both work.</li>
+        <li><code>GetIntFromString</code> safely converts a string to an integer, returning
+        the second argument (0) if the string is not a valid number.</li>
+        <li>The early <code>return</code> after each block is important &mdash; without it,
+        execution would fall through to the "Unknown command" handler.</li>
+    </ul>
+
+    <h2>Tutorial 4: Adding a New TLO Member</h2>
+
+    <div class="note">
+        <strong>What you will learn:</strong> The three-part pattern for adding TLO
+        members: (1) add an enum value in the header, (2) register it with
+        <code>ScopedTypeMember</code> in the constructor, and (3) handle it in the
+        <code>GetMember</code> switch statement. This is the same pattern used for every
+        existing member.
+    </div>
+
+    <p>We will add a <code>Locked</code> member to the MyChat TLO that returns whether
+    the main window is locked. After this, <code>${MyChat.Locked}</code> will work in
+    macros and Lua.</p>
+
+    <h3>Step 1: Add to the Members Enum</h3>
+
+    <p>Open <strong>MyChatTLO.h</strong> and find the <code>Members</code> enum inside
+    <code>MyChatType</code>. The enum gives each member a unique numeric ID that
+    MacroQuest uses internally to dispatch property lookups. Add your new value at
+    the end:</p>
+
+<pre><code>enum class Members
+{
+    Version,
+    Channel,
+    ChannelCount,
+    Locked,        // &lt;-- add this line
+};</code></pre>
+
+    <h3>Step 2: Register the Member</h3>
+
+    <p>Open <strong>MyChatTLO.cpp</strong> and find the <code>MyChatType</code>
+    constructor. Add a <code>ScopedTypeMember</code> call for the new member:</p>
+
+<pre><code>MyChatType::MyChatType() : MQ2Type("MyChat")
+{
+    ScopedTypeMember(Members, Version);
+    ScopedTypeMember(Members, Channel);
+    ScopedTypeMember(Members, ChannelCount);
+    ScopedTypeMember(Members, Locked);     // &lt;-- add this line
+    ScopedTypeMethod(Methods, Send);
+}</code></pre>
+
+    <p><code>ScopedTypeMember</code> is a MacroQuest macro that registers the member name
+    (derived from the enum value) so that <code>FindMember("Locked")</code> will
+    return the correct ID. The string name is automatically taken from the enum value
+    name, so the enum value <code>Locked</code> registers the member name
+    <code>"Locked"</code>. This is why the enum value name must match the desired
+    property name exactly.</p>
+
+    <h3>Step 3: Handle the Member in GetMember</h3>
+
+    <p>In the same file, find the <code>switch (static_cast&lt;Members&gt;(...))</code>
+    block inside <code>MyChatType::GetMember()</code>. This switch statement is what
+    MacroQuest calls when someone writes <code>${MyChat.Locked}</code> &mdash; it looks
+    up which enum value corresponds to "Locked" and jumps to the matching case. Add a
+    new case:</p>
+
+<pre><code>case Members::Locked:
+    if (!g_chatEngine)
+        return false;
+
+    Dest.Set(g_chatEngine-&gt;settings.windowLocked);
+    Dest.Type = mq::datatypes::pBoolType;
+    return true;</code></pre>
+
+    <h3>Step 4: Test It</h3>
+
+    <p>Build, load the plugin, and try:</p>
+
+<pre><code>/echo ${MyChat.Locked}</code></pre>
+
+    <p>It should print <code>TRUE</code> or <code>FALSE</code>. From Lua:</p>
+
+<pre><code>local locked = mq.TLO.MyChat.Locked()
+print("Window locked:", locked)</code></pre>
+
+    <div class="note">
+        <strong>Tip:</strong> For string members, use <code>strcpy_s(DataTypeTemp, ...)</code>
+        and set <code>Dest.Ptr = &amp;DataTypeTemp[0]</code> with
+        <code>Dest.Type = pStringType</code>. For int members, use <code>Dest.Int</code> with
+        <code>Dest.Type = pIntType</code>. Look at the existing cases in
+        <code>MyChatChannelType::GetMember()</code> for examples of every return type.
+    </div>
+
+    <h2>Tutorial 5: Adding a New GUI Element</h2>
+
+    <div class="note">
+        <strong>What you will learn:</strong> How ImGui's immediate-mode rendering works
+        (widgets are drawn every frame, not created once). How to find the right render
+        method. How to add interactive widgets like buttons and checkboxes. How to
+        optionally persist new settings.
+    </div>
+
+    <p>We will add a "Clear All" button to the config GUI that clears every channel's
+    console in one click.</p>
+
+    <h3>Step 1: Find the Right Render Method</h3>
+
+    <p>Open <strong>MyChatRenderer.cpp</strong>. The config window is drawn by
+    <code>RenderConfigGUI()</code> (line 303). Other render methods you might work in:</p>
+
+    <ul>
+        <li><code>RenderMainWindow()</code> (line 67) &mdash; the main tabbed chat
+        window.</li>
+        <li><code>RenderPopOutWindows()</code> (line 264) &mdash; detached channel
+        windows.</li>
+        <li><code>RenderEditChannelGUI()</code> (line 414) &mdash; the channel editor
+        dialog.</li>
+    </ul>
+
+    <h3>Step 2: Understand the ImGui Flow</h3>
+
+    <p><code>RenderConfigGUI()</code> starts with:</p>
+
+<pre><code>void MyChatRenderer::RenderConfigGUI(MyChatEngine&amp; engine)
+{
+    if (!engine.showConfigGUI)
+        return;
+
+    auto oldStyle = ImGuiTheme::ApplyTheme(engine.settings.themeIdx);
+
+    std::string winName = fmt::format("My Chat - Config##MQMyChat_{}", engine.charName);
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(winName.c_str(), &amp;engine.showConfigGUI, ImGuiWindowFlags_None))
+    {
+        // ... channel table is drawn here ...
+    }
+    ImGui::End();
+}</code></pre>
+
+    <p>The pattern is: <code>Begin()</code> opens the window, content goes inside the
+    <code>if</code> block, and <code>End()</code> closes it. Widgets you add inside this
+    block will appear in the config window. Unlike traditional GUIs where you create a
+    button once, ImGui is <strong>immediate mode</strong> &mdash; your code runs every
+    frame (~60 times per second), and each call to <code>ImGui::Button()</code> both
+    draws the button and returns <code>true</code> if it was clicked that frame.</p>
+
+    <h3>Step 3: Add the Button</h3>
+
+    <p>A good place for a "Clear All" button is just before the channel table. Add it
+    right after the <code>ImGui::Begin()</code> check:</p>
+
+<pre><code>if (ImGui::Begin(winName.c_str(), &amp;engine.showConfigGUI, ImGuiWindowFlags_None))
+{
+    if (ImGui::Button("Clear All Channels"))
+    {
+        if (engine.mainConsole)
+            engine.mainConsole-&gt;Clear();
+
+        for (auto&amp; [id, ch] : engine.settings.channels)
+        {
+            if (ch.console)
+                ch.console-&gt;Clear();
+        }
+    }
+    ImGui::Separator();
+
+    // ... existing channel table code continues here ...</code></pre>
+
+    <h3>Step 4: Common ImGui Widgets</h3>
+
+    <p>Here are the most useful widgets you might want to add elsewhere:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Widget</th>
+                <th>Code</th>
+                <th>What It Does</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Checkbox</td>
+                <td><code>ImGui::Checkbox("Label", &amp;boolVar)</code></td>
+                <td>Toggles a boolean value</td>
+            </tr>
+            <tr>
+                <td>Button</td>
+                <td><code>if (ImGui::Button("Click Me")) { ... }</code></td>
+                <td>Returns true when clicked</td>
+            </tr>
+            <tr>
+                <td>Text Input</td>
+                <td><code>ImGui::InputText("Label", buf, sizeof(buf))</code></td>
+                <td>Editable text field</td>
+            </tr>
+            <tr>
+                <td>Integer Input</td>
+                <td><code>ImGui::InputInt("Label", &amp;intVar)</code></td>
+                <td>Number field with +/- buttons</td>
+            </tr>
+            <tr>
+                <td>Separator</td>
+                <td><code>ImGui::Separator()</code></td>
+                <td>Horizontal divider line</td>
+            </tr>
+            <tr>
+                <td>Same Line</td>
+                <td><code>ImGui::SameLine()</code></td>
+                <td>Puts the next widget on the same row</td>
+            </tr>
+            <tr>
+                <td>Small Button</td>
+                <td><code>ImGui::SmallButton("x")</code></td>
+                <td>Compact button, useful for table cells</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Step 5: Wire to Engine Settings</h3>
+
+    <p>If your new widget should persist its value across sessions, store it in the engine
+    settings struct and make sure the <a href="database.html">database layer</a> saves and
+    loads it. For one-shot actions like "Clear All", no persistence is needed.</p>
+
+    <h3>Step 6: Verify It Works</h3>
+
+    <p>Build and load the plugin. Open the config window (<code>/mychat config</code>).
+    You should see a "Clear All Channels" button at the top. Send some test messages to
+    a few channels, then click the button &mdash; all channel consoles and the main
+    console should be empty.</p>
+
+    <h2>Common Pitfalls</h2>
+
+    <p>Before you start modifying MQMyChat, be aware of these gotchas that can cause
+    subtle bugs or crashes:</p>
+
+    <h3>WriteChatf Reentrancy</h3>
+
+    <div class="warning">
+        <strong>Do not</strong> call <code>WriteChatf()</code> inside Blech event
+        processing. Here is why: the plugin hooks both <code>OnWriteChatColor</code> and
+        <code>OnIncomingChat</code>. Both hooks feed every chat line into the Blech pattern
+        engine. If your Blech callback calls <code>WriteChatf()</code>, that new line
+        triggers <code>OnWriteChatColor</code> again, which re-enters Blech, causing
+        infinite recursion or corrupted state. For example, if you added
+        <code>WriteChatf("Matched a line!")</code> inside <code>BlechCallback</code>,
+        that message would itself be fed back into Blech, match again, print again, and
+        so on until the stack overflows and the game crashes. If you need to log debug
+        output, write to a file instead or use <code>DebugSpewAlways()</code>.
+    </div>
+
+    <h3>Spawn Names: Underscores vs. Spaces</h3>
+
+    <p>EverQuest uses two name formats internally:</p>
+    <ul>
+        <li><code>pSpawn-&gt;Name</code> uses underscores: <code>Selephra_Giztral</code></li>
+        <li><code>pSpawn-&gt;DisplayedName</code> uses spaces:
+        <code>Selephra Giztral</code></li>
+    </ul>
+    <p><code>GetSpawnByPartialName()</code> expects underscores. If you are searching for a
+    name extracted from a chat line (which uses spaces), convert spaces to underscores
+    first:</p>
+
+<pre><code>std::string searchName = nameFromChat;
+for (char&amp; c : searchName)
+    if (c == ' ') c = '_';
+PlayerClient* pSpawn = GetSpawnByPartialName(searchName.c_str());</code></pre>
+
+    <h3>EMU vs. Live Chat Format Differences</h3>
+
+    <p>Chat message formats differ between EMU (emulated) and Live servers. For example:</p>
+    <ul>
+        <li><strong>EMU:</strong> <code>Grimmier says 'Hello'</code> (no comma after
+        "says")</li>
+        <li><strong>Live:</strong> <code>Grimmier says, 'Hello'</code> (comma after
+        "says")</li>
+    </ul>
+    <p>If you are writing Blech patterns for say/tell/shout events, you may need to
+    account for both formats. The wildcard <code>#*#</code> in
+    <code>#*#says#*#</code> handles both cases naturally.</p>
+
+    <h3>Color Format: Database vs. Memory</h3>
+
+    <p>Colors are stored differently in the database and in memory:</p>
+    <ul>
+        <li><strong>Database (SQLite):</strong> RGBA floats from 0.0 to 1.0
+        (e.g., <code>0.972549, 0.541176, 0.996078, 1.0</code>)</li>
+        <li><strong>Memory (ImGui):</strong> Also 0.0-1.0 floats via
+        <code>ImVec4</code></li>
+        <li><strong>MQ Console:</strong> Colors as 0-255 <code>uint8_t</code> values</li>
+    </ul>
+    <p>Be careful when converting between these. If you are passing colors between MQ's
+    console API and ImGui, you need to divide or multiply by 255.</p>
+
+    <h3>Blech Event Registration Order</h3>
+
+    <div class="warning">
+        <strong>Always</strong> call <code>UnregisterBlechEvents()</code> before calling
+        <code>RegisterBlechEvents()</code> when changing patterns. If you register new
+        events without unregistering the old ones first, you will get duplicate matches
+        and potentially doubled output in channels.
+    </div>
+
+    <h3>Preset Switching Order</h3>
+
+    <p>When switching presets, the operations must happen in exactly this order:</p>
+    <ol>
+        <li><code>SaveCharacterSettings()</code> &mdash; persist current state</li>
+        <li><code>SetActivePreset()</code> &mdash; update the DB to point at the new
+        preset</li>
+        <li><code>UnloadCharacterSettings()</code> &mdash; tear down current channels,
+        events, Blech patterns</li>
+        <li><code>LoadCharacterSettings()</code> &mdash; load the new preset's data</li>
+    </ol>
+    <p>Skipping Save means losing unsaved changes. Skipping Unload before Load means
+    stale Blech patterns remain registered, causing ghost matches. See the
+    <code>preset</code> subcommand in <a href="commands-tlo.html">Commands &amp; TLO</a>
+    for the working implementation.</p>
+
+    <h2>Where to Go Next</h2>
+
+    <ul>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a> &mdash; full reference for
+        the APIs you might extend.</li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a> &mdash; understand
+        how messages flow through the system before adding new routing logic.</li>
+        <li><a href="database.html">Database &amp; Settings</a> &mdash; learn about the
+        SQLite schema if you need to add new persistent settings.</li>
+        <li><a href="architecture.html">Architecture</a> &mdash; see how all the pieces
+        fit together.</li>
+    </ul>
+</main>
+
+</body>
+</html>

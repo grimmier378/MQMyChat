@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plugin Lifecycle - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html" class="active">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+
+<h1>Plugin Lifecycle</h1>
+
+<p>
+    This page walks through every stage of MQMyChat's life, from the moment MacroQuest loads the
+    plugin DLL to the moment it unloads. If you are new to MQ plugin development, this is the
+    right place to start. Every plugin follows the same callback pattern; MQMyChat simply fills
+    in each callback with chat-specific logic.
+</p>
+
+<div class="note">
+    <strong>Jargon you will see on this page:</strong>
+    <ul style="margin-top:0.5em;">
+        <li><strong>TLO</strong> (Top-Level Object) &mdash; A named data accessor that macros
+            and Lua scripts can query, like <code>${MyChat}</code>. Think of it as a read-only
+            API that other MQ code can call.</li>
+        <li><strong>ConsoleWidget</strong> &mdash; An MQ ImGui widget that displays scrollable,
+            colored text. Each chat tab in MQMyChat is backed by one of these.</li>
+        <li><strong>Blech</strong> &mdash; MacroQuest's built-in text pattern matcher.
+            It watches every chat line for patterns you define and fires a callback when one
+            matches. See <a href="chat-routing.html">Chat Routing</a> for full details.</li>
+        <li><strong>Zep</strong> &mdash; The text editor library embedded inside each
+            ConsoleWidget. You interact with it indirectly when you change font sizes.</li>
+        <li><strong>pLocalPlayer</strong> &mdash; An MQ pointer to the currently logged-in
+            character's spawn data. It is <code>nullptr</code> when no character is in the
+            game world (for example, at the character select screen).</li>
+        <li><strong>pLocalPC</strong> &mdash; Similar to <code>pLocalPlayer</code>, but
+            points to the character's "player client" data (group info, inventory, etc.).</li>
+        <li><strong>gPathResources</strong> &mdash; MQ's shared resources folder. By default,
+            the <code>resources</code> subfolder within your MacroQuest directory.</li>
+        <li><strong>gPathConfig</strong> &mdash; MQ's configuration folder. By default,
+            the <code>config</code> subfolder within your MacroQuest directory.</li>
+        <li><strong>GAMESTATE_INGAME / GAMESTATE_CHARSELECT</strong> &mdash; Integer
+            constants that tell you whether EverQuest is on the character select screen or
+            the player is actually in the game world.</li>
+    </ul>
+</div>
+
+<div class="note">
+    <strong>Tip:</strong> All line numbers reference <code>MQMyChat.cpp</code> unless stated
+    otherwise. Open it side-by-side while reading this page.
+</div>
+
+<!-- ================================================================== -->
+<h2>Plugin Callbacks (MQMyChat.cpp)</h2>
+
+<p>
+    MacroQuest calls these functions automatically at the right time. You never call them
+    yourself. Think of them as hooks: MQ says "something happened," and your plugin gets a
+    chance to react.
+</p>
+
+<h3>InitializePlugin (line 25)</h3>
+
+<p>
+    Called once when the plugin DLL is first loaded (typically at MQ startup or when you type
+    <code>/plugin MQMyChat</code>). This is where all one-time setup happens:
+</p>
+
+<pre><code>PLUGIN_API void InitializePlugin()
+{
+    g_chatEngine = new MyChatEngine();
+    g_chatEngine->Initialize();
+    AddCommand("/mychat", MyChatCommand);
+    RegisterMyChatTLO();
+}</code></pre>
+
+<p>Step by step:</p>
+<ol>
+    <li>Creates the single <code>MyChatEngine</code> instance and stores it in the global
+        <code>g_chatEngine</code> pointer.</li>
+    <li>Calls <code>Initialize()</code>, which opens the SQLite database, checks for
+        migration from the Lua version, creates the main console widget, the Blech instance,
+        and an embedded Lua state (more on each below).</li>
+    <li>Registers the <code>/mychat</code> slash command so players can type it in-game.
+        See <a href="commands-tlo.html">Commands &amp; TLO</a> for the full command table.</li>
+    <li>Registers the TLO (<code>${MyChat}</code>) so macros and Lua scripts can query
+        the plugin.</li>
+</ol>
+
+<h3>ShutdownPlugin (line 33)</h3>
+
+<p>
+    Called once when the plugin is unloaded. Mirrors <code>InitializePlugin</code> in reverse
+    order: unregister TLO, remove command, shut down the engine, delete it.
+</p>
+
+<pre><code>PLUGIN_API void ShutdownPlugin()
+{
+    UnregisterMyChatTLO();
+    RemoveCommand("/mychat");
+    g_chatEngine->Shutdown();
+    delete g_chatEngine;
+    g_chatEngine = nullptr;
+}</code></pre>
+
+<p>
+    <code>Shutdown()</code> saves any unsaved settings, closes the Lua state, resets all
+    console widgets, and closes the database. After this call the global pointer is
+    <code>nullptr</code>, so every other callback checks for that before doing work.
+</p>
+
+<h3>SetGameState (line 42)</h3>
+
+<p>
+    MacroQuest calls this whenever EverQuest transitions between game states (character select,
+    in-game, server select, etc.). MQMyChat only cares about two:
+</p>
+
+<pre><code>PLUGIN_API void SetGameState(int GameState)
+{
+    if (!g_chatEngine)
+        return;
+
+    if (GameState == GAMESTATE_INGAME)
+        g_chatEngine->LoadCharacterSettings();
+    else if (GameState == GAMESTATE_CHARSELECT)
+        g_chatEngine->UnloadCharacterSettings();
+}</code></pre>
+
+<ul>
+    <li><strong>GAMESTATE_INGAME</strong> &mdash; A character has entered the game world
+        (finished loading into a zone). This is the signal to load that character's channels,
+        filters, presets, and Blech events from the database.</li>
+    <li><strong>GAMESTATE_CHARSELECT</strong> &mdash; The player returned to the character
+        select screen. Save settings, tear down Blech events, and clear channel consoles so
+        the next character starts fresh.</li>
+</ul>
+
+<h3>OnIncomingChat (line 53)</h3>
+
+<p>
+    Fires for every line of chat that EverQuest itself generates (tells, say, group chat,
+    combat messages, emotes, etc.). The plugin feeds the raw text into Blech for pattern
+    matching. See <a href="chat-routing.html">Chat Routing &amp; Tokens</a> for what happens
+    next.
+</p>
+
+<pre><code>PLUGIN_API bool OnIncomingChat(const char* Line, DWORD Color)
+{
+    if (g_chatEngine)
+        g_chatEngine->ProcessIncomingChat(Line, static_cast&lt;int&gt;(Color));
+    return false;
+}</code></pre>
+
+<p>
+    Returning <code>false</code> means "I did not consume this line." Other plugins and
+    MQ's own chat window still see it. MQMyChat never suppresses lines; it only copies
+    them into its own consoles.
+</p>
+
+<h3>OnWriteChatColor (line 60)</h3>
+
+<p>
+    Fires for every line written by MacroQuest or another plugin (via <code>WriteChatf</code>,
+    <code>WriteChatColor</code>, etc.). Same idea as <code>OnIncomingChat</code>, but for
+    MQ-originated output:
+</p>
+
+<pre><code>PLUGIN_API void OnWriteChatColor(const char* Line, int Color, int Filter)
+{
+    if (g_chatEngine)
+        g_chatEngine->ProcessWriteChat(Line, Color);
+}</code></pre>
+
+<h3>OnUpdateImGui (line 66)</h3>
+
+<p>
+    Called every frame by the ImGui render loop. This is where all drawing happens. If the
+    engine is not ready or the player is not in-game, the function bails out immediately.
+</p>
+
+<pre><code>PLUGIN_API void OnUpdateImGui()
+{
+    if (!g_chatEngine || GetGameState() != GAMESTATE_INGAME)
+        return;
+
+    s_renderer.RenderMainWindow(*g_chatEngine);
+    s_renderer.RenderPopOutWindows(*g_chatEngine);
+
+    if (g_chatEngine->showConfigGUI)
+        s_renderer.RenderConfigGUI(*g_chatEngine);
+
+    if (g_chatEngine->showEditGUI)
+        s_renderer.RenderEditChannelGUI(*g_chatEngine);
+}</code></pre>
+
+<p>
+    Notice that rendering is delegated to a separate <code>MyChatRenderer</code> object
+    (<code>s_renderer</code>), not to methods on the engine itself. This keeps rendering
+    logic out of the engine class. The renderer draws up to four things each frame:
+</p>
+
+<ol>
+    <li>The main tabbed chat window (always drawn when in-game).</li>
+    <li>Any pop-out channel windows (channels the user has detached into their own window).</li>
+    <li>The config GUI, if the user toggled it on (via <code>/mychat config</code> or a
+        button).</li>
+    <li>The channel editor GUI, if the user is editing a specific channel.</li>
+</ol>
+
+<p>
+    For details on how each of these renders, see the
+    <a href="rendering.html">ImGui Rendering</a> page.
+</p>
+
+<h3>OnPulse (line 81)</h3>
+
+<p>
+    Called roughly every frame. The plugin throttles its work to once every 500 ms using a
+    static timer:
+</p>
+
+<pre><code>PLUGIN_API void OnPulse()
+{
+    if (!g_chatEngine)
+        return;
+
+    static std::chrono::steady_clock::time_point pulseTimer
+        = std::chrono::steady_clock::now();
+    if (std::chrono::steady_clock::now() > pulseTimer)
+    {
+        pulseTimer = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds(500);
+        g_chatEngine->CleanExpiredClaims();
+
+        if (!g_chatEngine->charName.empty() &&
+            g_chatEngine->m_lastSavedShowMain
+                != g_chatEngine->showMainWindow)
+        {
+            g_chatEngine->SaveWindowVisibility();
+        }
+    }
+}</code></pre>
+
+<p>Two things happen each tick:</p>
+<ul>
+    <li><strong>CleanExpiredClaims()</strong> &mdash; Removes entries from
+        <code>m_claimedLines</code> whose TTL (0.5 s) has elapsed. These entries track
+        which lines were already routed to a channel, so the
+        <a href="chat-routing.html#spam-channel">Spam channel</a> knows what is unclaimed.</li>
+    <li><strong>Autosave window visibility</strong> &mdash; If the user toggled the main
+        window on or off (via the X button or <code>/mychat hide</code>), this detects the
+        change and writes it to a per-character INI file immediately (see
+        <a href="#window-visibility">Window Visibility Persistence</a> below).</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2>MyChatEngine Lifecycle Methods</h2>
+
+<p>
+    The plugin callbacks above delegate to these methods on <code>MyChatEngine</code>.
+    Understanding them is key to understanding the plugin's startup and teardown sequence.
+</p>
+
+<h3>Initialize() (line 227)</h3>
+
+<p>
+    One-time setup. Called from <code>InitializePlugin</code>. Here is the full method:
+</p>
+
+<pre><code>void MyChatEngine::Initialize()
+{
+    database = std::make_unique&lt;MyChatDatabase&gt;();
+    dbPath = fmt::format("{}\\MyChat.db", gPathResources);
+    std::filesystem::path dbDir
+        = std::filesystem::path(dbPath).parent_path();
+    std::filesystem::create_directories(dbDir);
+
+    if (!std::filesystem::exists(dbPath))
+    {
+        std::string luaDbPath
+            = fmt::format("{}\\MyUI\\MyChat\\MyChat.db", gPathConfig);
+        if (std::filesystem::exists(luaDbPath))
+        {
+            std::filesystem::copy_file(luaDbPath, dbPath);
+            WriteChatf("\at[MQMyChat]\ax Migrated database from Lua MyChat: %s",
+                luaDbPath.c_str());
+        }
+    }
+
+    database-&gt;Open(dbPath);
+    database-&gt;InitSchema();
+    mainConsole = mq::imgui::ConsoleWidget::Create(
+        "MQMyChat##MainConsole");
+    m_blech = std::make_unique&lt;Blech&gt;('#', '|', BlechVarCallback);
+    m_luaState = luaL_newstate();
+    if (m_luaState)
+        luaL_openlibs(m_luaState);
+}</code></pre>
+
+<p>What each step does:</p>
+<ol>
+    <li>Creates a <code>MyChatDatabase</code> helper object.</li>
+    <li>Builds the database file path inside <code>gPathResources</code> (MQ's shared
+        resources folder).</li>
+    <li>Ensures the directory exists.</li>
+    <li>Checks for <a href="#db-migration">migration</a> from the Lua version (see below).</li>
+    <li>Opens the SQLite database and initializes the schema (creates tables if missing).
+        See <a href="database.html">Database &amp; Settings</a> for the schema.</li>
+    <li>Creates the main console widget (the "All" tab).</li>
+    <li>Creates a <strong>Blech</strong> instance. Blech is MQ's built-in pattern matcher.
+        The <code>'#'</code> and <code>'|'</code> arguments configure the wildcard and
+        separator characters.</li>
+    <li>Creates an embedded <strong>LuaJIT</strong> state with standard libraries. This is
+        used exclusively for Lua-style pattern matching in filters (see
+        <a href="chat-routing.html#pattern-matching">Pattern Matching</a>).</li>
+</ol>
+
+<h3>Shutdown() (line 253)</h3>
+
+<pre><code>void MyChatEngine::Shutdown()
+{
+    UnregisterBlechEvents();
+
+    if (!charName.empty())
+        SaveCharacterSettings();
+
+    mainConsole.reset();
+
+    for (auto& [id, ch] : settings.channels)
+        ch.console.reset();
+
+    if (m_luaState)
+    {
+        lua_close(m_luaState);
+        m_luaState = nullptr;
+    }
+
+    database-&gt;Close();
+}</code></pre>
+
+<p>Clean teardown in order: Blech events, save, consoles, Lua, database.</p>
+
+<h3>LoadCharacterSettings() (line 274)</h3>
+
+<p>
+    Called when a character enters the game world. This is where per-character customization
+    takes effect:
+</p>
+
+<pre><code>void MyChatEngine::LoadCharacterSettings()
+{
+    if (!pLocalPlayer)
+        return;
+
+    charName = pLocalPlayer-&gt;Name;
+    serverName = GetServerShortName();
+
+    activePresetId = database-&gt;GetOrCreatePreset(serverName, charName);
+    database-&gt;LoadSettings(activePresetId, settings);
+    database-&gt;LoadGlobalSettings(serverName, charName, settings);
+    LoadWindowVisibility();
+
+    if (settings.channels.empty())
+        PopulateDefaultChannels();
+
+    for (auto& [id, ch] : settings.channels)
+    {
+        if (!ch.console)
+            ch.console = mq::imgui::ConsoleWidget::Create(
+                fmt::format("MQMyChat##Channel_{}", id).c_str());
+    }
+
+    RegisterBlechEvents();
+    SortChannels();
+    ApplyFontSizes();
+    SaveCharacterSettings();
+    database-&gt;GetPresetList(serverName, presetList);
+
+    activePresetName.clear();
+    for (const auto& p : presetList)
+    {
+        if (p.id == activePresetId)
+        {
+            activePresetName = p.name;
+            break;
+        }
+    }
+}</code></pre>
+
+<p>The sequence:</p>
+<ol>
+    <li>Grab the character name and server short name from the game.</li>
+    <li>Look up (or create) the active preset in the database.</li>
+    <li>Load channel/event/filter settings from the preset.</li>
+    <li>Load global settings (settings shared across presets).</li>
+    <li>Load window visibility from the per-character INI file.</li>
+    <li>If no channels exist yet, seed the defaults
+        (<code>PopulateDefaultChannels</code>).</li>
+    <li>Create a <code>ConsoleWidget</code> for every channel that doesn't have one.</li>
+    <li>Register all enabled events with Blech.</li>
+    <li>Sort channels by tab order for the UI.</li>
+    <li>Apply saved font sizes to every console's Zep editor.</li>
+    <li>Immediately save (to persist any defaults that were just created).</li>
+    <li>Fetch the preset list and find the active preset name for display.</li>
+</ol>
+
+<h3>SaveCharacterSettings() (line 313)</h3>
+
+<pre><code>void MyChatEngine::SaveCharacterSettings()
+{
+    if (activePresetId < 0)
+        return;
+
+    SyncFontSizes();
+    database-&gt;SaveSettings(activePresetId, settings);
+    database-&gt;SaveGlobalSettings(serverName, charName, settings);
+    SaveWindowVisibility();
+}</code></pre>
+
+<p>
+    <code>SyncFontSizes()</code> reads the current pixel height from each Zep editor and
+    writes it back into the <code>settings</code> struct, so what you see is what gets saved.
+</p>
+
+<h3>UnloadCharacterSettings() (line 324)</h3>
+
+<pre><code>void MyChatEngine::UnloadCharacterSettings()
+{
+    if (charName.empty())
+        return;
+
+    SaveCharacterSettings();
+    UnregisterBlechEvents();
+
+    for (auto& [id, ch] : settings.channels)
+        ch.console.reset();
+
+    settings.channels.clear();
+    charName.clear();
+}</code></pre>
+
+<p>
+    Saves, tears down Blech registrations, releases every channel console, empties the channel
+    map, and clears the character name. The engine is now ready to load a different character.
+</p>
+
+<!-- ================================================================== -->
+<h2 id="db-migration">DB Migration on First Load</h2>
+
+<p>
+    MQMyChat is a C++ rewrite of the Lua-based MyChat module (part of the
+    <a href="https://github.com/grimmier378/MyUI" target="_blank">MyUI</a> project). To make migration seamless, the plugin
+    checks for the old database on first run:
+</p>
+
+<ol>
+    <li><code>Initialize()</code> builds the plugin's database path:
+        <code>gPathResources/MyChat.db</code>.</li>
+    <li>If that file does not exist, it looks for the Lua module's database at
+        <code>gPathConfig/MyUI/MyChat/MyChat.db</code>.</li>
+    <li>If found, it copies the file over with
+        <code>std::filesystem::copy_file</code>.</li>
+    <li>A chat message confirms the migration.</li>
+</ol>
+
+<div class="note">
+    <strong>Why copy instead of move?</strong> The Lua module may still be installed. Copying
+    preserves the original so users can go back if needed.
+</div>
+
+<p>
+    Because both versions share the same SQLite schema, channels, events, filters, and
+    presets carry over with no conversion step.
+</p>
+
+<!-- ================================================================== -->
+<h2 id="window-visibility">Window Visibility Persistence</h2>
+
+<p>
+    Whether the main window is shown or hidden is stored separately from the SQLite database.
+    This is a deliberate design choice: the database schema must stay compatible with the Lua
+    module, and window visibility is a C++ plugin concept that does not exist in the Lua
+    version.
+</p>
+
+<h3>Where it is stored</h3>
+
+<p>
+    A per-character INI file at:
+</p>
+
+<pre><code>gPathConfig/MQMyChat/&lt;Server&gt;/&lt;CharName&gt;.ini</code></pre>
+
+<p>
+    Inside that file, a single section and key:
+</p>
+
+<pre><code>[Windows]
+ShowMain=1</code></pre>
+
+<h3>Load and save</h3>
+
+<pre><code>void MyChatEngine::LoadWindowVisibility()
+{
+    if (!pLocalPC)
+        return;
+
+    std::string path
+        = GetWindowVisibilityIniPath(serverName, charName);
+    if (path.empty())
+        return;
+
+    showMainWindow
+        = GetPrivateProfileBool("Windows", "ShowMain", true, path);
+    m_lastSavedShowMain = showMainWindow;
+}
+
+void MyChatEngine::SaveWindowVisibility()
+{
+    std::string path
+        = GetWindowVisibilityIniPath(serverName, charName);
+    if (path.empty())
+        return;
+
+    WritePrivateProfileBool("Windows", "ShowMain",
+        showMainWindow, path);
+    m_lastSavedShowMain = showMainWindow;
+}</code></pre>
+
+<h3>Autosave in OnPulse</h3>
+
+<p>
+    The <code>OnPulse</code> callback compares <code>m_lastSavedShowMain</code> to the
+    current value of <code>showMainWindow</code> every 500 ms. If they differ, it calls
+    <code>SaveWindowVisibility()</code>. This way the user never loses their show/hide
+    preference, even if the plugin crashes or MQ is closed abruptly.
+</p>
+
+<!-- ================================================================== -->
+<h2 id="blech-event-registration">Blech Event Registration</h2>
+
+<p>
+    As mentioned in the glossary above, <strong>Blech</strong> is MacroQuest's built-in text
+    pattern matcher. It uses a simple wildcard syntax (not regex) to watch every chat line for
+    patterns you define. When a line matches, Blech fires a callback so the plugin knows which
+    channel to route the line to. For full syntax details, see
+    <a href="chat-routing.html">Chat Routing &amp; Tokens</a>.
+</p>
+
+<p>
+    MQMyChat registers one Blech event per enabled event string in each enabled channel.
+</p>
+
+<h3>RegisterBlechEvents() (line 372)</h3>
+
+<pre><code>void MyChatEngine::RegisterBlechEvents()
+{
+    if (!m_blech)
+        return;
+
+    m_blech-&gt;Reset();
+    m_blechEventMap.clear();
+
+    for (auto& [channelId, ch] : settings.channels)
+    {
+        if (!ch.enabled)
+            continue;
+
+        for (auto& evt : ch.events)
+        {
+            if (!evt.enabled || evt.eventString.empty())
+                continue;
+
+            auto* data = new BlechEventData{
+                channelId, evt.eventIndex };
+            unsigned int id = m_blech-&gt;AddEvent(
+                evt.eventString.c_str(), BlechCallback, data);
+            evt.blechId = id;
+            m_blechEventMap[id] = *data;
+            delete data;
+        }
+    }
+}</code></pre>
+
+<p>Key points:</p>
+<ul>
+    <li>Always starts by resetting Blech (removes all previous events). This makes it safe
+        to call repeatedly &mdash; for example, after the user edits channels in the config
+        GUI.</li>
+    <li>Skips disabled channels and disabled events.</li>
+    <li>Each registered event stores a <code>BlechEventData</code> containing the
+        <code>channelId</code> and <code>eventIndex</code>. When Blech matches a line,
+        the callback uses these to know which channel to route to.</li>
+    <li>The returned Blech ID is saved in <code>m_blechEventMap</code> for reverse lookup
+        and in <code>evt.blechId</code> for reference.</li>
+</ul>
+
+<h3>UnregisterBlechEvents() (line 399)</h3>
+
+<pre><code>void MyChatEngine::UnregisterBlechEvents()
+{
+    if (!m_blech)
+        return;
+
+    m_blech-&gt;Reset();
+    m_blechEventMap.clear();
+}</code></pre>
+
+<p>Simple: reset Blech and clear the map. Called during
+    <code>UnloadCharacterSettings()</code> and <code>Shutdown()</code>.</p>
+
+<h3>When registration happens</h3>
+
+<p>Blech events are registered (or re-registered) at these points:</p>
+<ul>
+    <li><code>LoadCharacterSettings()</code> &mdash; Character enters the game.</li>
+    <li>After saving from the Edit GUI &mdash; The user may have changed event strings.</li>
+    <li><code>/mychat reload</code> &mdash; Calls <code>UnloadCharacterSettings</code>
+        then <code>LoadCharacterSettings</code>.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2>Lifecycle Summary Diagram</h2>
+
+<div class="diagram">
+Plugin Load
+  |
+  v
+InitializePlugin()
+  |-- new MyChatEngine
+  |-- Initialize()
+  |     |-- Create MyChatDatabase
+  |     |-- Check for Lua DB migration
+  |     |-- Open SQLite DB, init schema
+  |     |-- Create main ConsoleWidget
+  |     |-- Create Blech instance
+  |     |-- Create embedded Lua state
+  |-- AddCommand("/mychat")
+  |-- RegisterMyChatTLO()
+  v
+[Waiting for game state...]
+  |
+  v
+SetGameState(GAMESTATE_INGAME)
+  |-- LoadCharacterSettings()
+  |     |-- Get char/server name
+  |     |-- Load preset from DB
+  |     |-- Load settings, global settings
+  |     |-- Load window visibility (INI)
+  |     |-- Create channel consoles
+  |     |-- RegisterBlechEvents()
+  |     |-- SortChannels, ApplyFontSizes
+  v
+[Running... OnPulse / OnIncomingChat / OnWriteChatColor / OnUpdateImGui]
+  |
+  v
+SetGameState(GAMESTATE_CHARSELECT)
+  |-- UnloadCharacterSettings()
+  |     |-- SaveCharacterSettings()
+  |     |-- UnregisterBlechEvents()
+  |     |-- Clear consoles and channels
+  v
+[Waiting for next character or unload...]
+  |
+  v
+ShutdownPlugin()
+  |-- UnregisterMyChatTLO()
+  |-- RemoveCommand("/mychat")
+  |-- Shutdown()
+  |     |-- UnregisterBlechEvents()
+  |     |-- Save settings
+  |     |-- Reset consoles
+  |     |-- Close Lua state
+  |     |-- Close database
+  |-- delete g_chatEngine
+</div>
+
+<div class="warning">
+    <strong>Important:</strong> Never assume a character is loaded. Always check
+    <code>charName.empty()</code> or <code>pLocalPlayer != nullptr</code> before accessing
+    character-specific data. The engine exists from plugin load to plugin unload, but
+    character data only exists between <code>LoadCharacterSettings</code> and
+    <code>UnloadCharacterSettings</code>.
+</div>
+
+<div class="page-nav">
+    <strong>Next:</strong> <a href="chat-routing.html">Chat Routing &amp; Tokens</a> &mdash;
+    how chat lines are matched, routed to channels, and how token substitution works.
+</div>
+
+</main>
+</body>
+</html>

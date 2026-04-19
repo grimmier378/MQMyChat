@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database &amp; Settings - MQMyChat Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">MQMyChat Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="lifecycle.html">Plugin Lifecycle</a></li>
+        <li><a href="chat-routing.html">Chat Routing &amp; Tokens</a></li>
+        <li><a href="database.html" class="active">Database &amp; Settings</a></li>
+        <li><a href="rendering.html">ImGui Rendering</a></li>
+        <li><a href="commands-tlo.html">Commands &amp; TLO</a></li>
+        <li><a href="extending.html">How to Extend</a></li>
+    </ul>
+</nav>
+
+<main class="content">
+    <h1>Database &amp; Settings</h1>
+
+    <p>MQMyChat stores all of its configuration &mdash; channels, events, filters, presets,
+    and per-character settings &mdash; in a single SQLite database file. This page walks you
+    through how the database is set up, what the tables look like, and how the plugin reads
+    and writes your settings.</p>
+
+    <p>The code for all of this lives in two files: <code>MyChatDatabase.h</code> (the class
+    declaration) and <code>MyChatDatabase.cpp</code> (the implementation).</p>
+
+    <h2>SQLite Setup</h2>
+
+    <p>MQMyChat uses <strong>SQLite3</strong> as its database engine. If you have never worked
+    with SQLite before, think of it as a self-contained database that lives entirely in a
+    single file on your hard drive. There is no separate server to install or run &mdash;
+    the plugin links the SQLite library directly and reads/writes the file itself. That makes
+    it simple to deploy (just one <code>.db</code> file) and easy to back up (copy the file).</p>
+
+    <h3>Database File Location</h3>
+
+    <p>The database file is stored at:</p>
+
+    <pre><code>gPathResources/MyChat.db</code></pre>
+
+    <p>In practice, <code>gPathResources</code> is your MacroQuest <strong>resources</strong>
+    directory. This is the same folder where MQ stores other shared data files.</p>
+
+    <h3>Connection Settings</h3>
+
+    <p>When the <code>MyChatDatabase</code> class opens the database (via its <code>Open()</code>
+    method), it applies three important settings called <strong>pragmas</strong>. A pragma is a
+    special SQLite command that configures how the database engine behaves &mdash; think of them
+    as runtime options you set before doing any real work.</p>
+
+    <pre><code>PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 3000;</code></pre>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Pragma</th>
+                <th>What It Does</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>journal_mode = WAL</code></td>
+                <td><strong>Write-Ahead Logging.</strong> By default, SQLite uses a "rollback
+                journal" that locks the entire database file during writes. WAL mode changes
+                this so that new data is written to a separate log file first, then merged
+                back into the main database later. The practical benefit: readers and writers
+                can operate at the same time without blocking each other. This matters because
+                MQMyChat may be reading settings on one thread while saving them on another.
+                You may notice a <code>MyChat.db-wal</code> file next to the database &mdash;
+                that is the WAL log, and it is normal.</td>
+            </tr>
+            <tr>
+                <td><code>foreign_keys = ON</code></td>
+                <td>Enables <strong>foreign key</strong> enforcement. A foreign key is a rule
+                that says "this column must reference a valid row in another table." For
+                example, the <code>channels</code> table has a foreign key pointing to
+                <code>presets</code>, which means you cannot create a channel that belongs to
+                a preset that does not exist. SQLite has foreign key support built in, but it
+                is turned <em>off</em> by default for backward compatibility &mdash; you have
+                to explicitly enable it every time you open a connection. The schema also uses
+                <code>ON DELETE CASCADE</code> on its foreign keys, which means deleting a
+                preset automatically deletes all its channels, events, and filters.</td>
+            </tr>
+            <tr>
+                <td><code>busy_timeout = 3000</code></td>
+                <td>If the database is locked by another operation, wait up to
+                <strong>3 seconds</strong> before giving up. Without this, a busy database
+                would return an error immediately.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Opening and Closing</h3>
+
+    <p><code>Open()</code> connects to the database file and applies the pragmas shown above.
+    <code>Close()</code> does a bit more than just disconnecting &mdash; it first runs a
+    <strong>WAL checkpoint</strong>:</p>
+
+    <pre><code>PRAGMA wal_checkpoint;</code></pre>
+
+    <p>This flushes any pending writes from the WAL file back into the main database file.
+    It ensures that the <code>MyChat.db</code> file is fully up to date when the plugin shuts
+    down.</p>
+
+    <h2>Schema</h2>
+
+    <p>The database has <strong>7 tables</strong>. They are all created by the
+    <code>InitSchema()</code> method in <code>MyChatDatabase.cpp</code>. Each table uses
+    <code>CREATE TABLE IF NOT EXISTS</code>, so re-running the schema creation is safe &mdash;
+    it will not destroy existing data.</p>
+
+    <p>Here is how the tables relate to each other. The arrows show foreign key relationships
+    (the arrow points from the child table to the parent it references):</p>
+
+    <div class="diagram">presets (1) ──&lt; channels (many)       [ON DELETE CASCADE]
+                      │
+                      ├──&lt; events (many)       [ON DELETE CASCADE]
+                      │       │
+                      │       └──&lt; filters (many)  [ON DELETE CASCADE]
+                      │
+char_active_preset ──&gt; presets                 [ON DELETE CASCADE]
+char_channel_overrides ──&gt; presets             [ON DELETE CASCADE]
+global_settings (standalone, no foreign keys)</div>
+
+    <p>The <code>ON DELETE CASCADE</code> annotations mean that deleting a parent row
+    automatically deletes all its children. For example, deleting a preset removes all of
+    its channels, which in turn removes all their events and filters. This keeps the
+    database clean without requiring manual cleanup.</p>
+
+    <h3>global_settings</h3>
+
+    <p>Stores per-character key-value settings. Think of it as a simple dictionary where each
+    character on each server has their own set of preferences.</p>
+
+    <pre><code>CREATE TABLE global_settings (
+    char_name TEXT NOT NULL,
+    server    TEXT NOT NULL DEFAULT '',
+    key       TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    PRIMARY KEY (char_name, server, key)
+);</code></pre>
+
+    <div class="note">
+        <strong>About PRIMARY KEY:</strong> The <code>PRIMARY KEY (char_name, server, key)</code>
+        is a <em>composite primary key</em>, meaning the combination of all three columns must
+        be unique. This allows the same key name (like <code>"locked"</code>) to exist once per
+        character per server, but not twice for the same character on the same server.
+    </div>
+
+    <p>The following keys are stored in this table:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>What It Controls</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>locked</code></td><td>Whether the main window is locked (no move/resize)</td></tr>
+            <tr><td><code>timeStamps</code></td><td>Show timestamps on chat lines</td></tr>
+            <tr><td><code>Scale</code></td><td>Window scale factor</td></tr>
+            <tr><td><code>themeIdx</code></td><td>Index of the active <a href="rendering.html">theme</a></td></tr>
+            <tr><td><code>doLinks</code></td><td>Enable clickable item links</td></tr>
+            <tr><td><code>mainEcho</code></td><td>Echo command for the main chat tab</td></tr>
+            <tr><td><code>MainFontSize</code></td><td>Font size for the main console</td></tr>
+            <tr><td><code>LogCommands</code></td><td>Whether to log commands to the chat window</td></tr>
+            <tr><td><code>keyFocus</code></td><td>Whether keyboard focus key is enabled</td></tr>
+            <tr><td><code>keyName</code></td><td>Name of the key used for focus (e.g., "RightShift")</td></tr>
+            <tr><td><code>localEcho</code></td><td>Show your own typed text in the channel</td></tr>
+            <tr><td><code>autoScroll</code></td><td>Auto-scroll to newest messages</td></tr>
+        </tbody>
+    </table>
+
+    <h3>presets</h3>
+
+    <p>A preset is a named collection of channel configurations. You might have one preset for
+    raiding (showing raid chat, tells, and loot) and another for grouping (showing group chat
+    and experience). The presets table stores metadata about each preset.</p>
+
+    <pre><code>CREATE TABLE presets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    preset_name TEXT NOT NULL,
+    server      TEXT NOT NULL DEFAULT '',
+    description TEXT DEFAULT '',
+    created_by  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(preset_name, server)
+);</code></pre>
+
+    <div class="note">
+        <strong>About AUTOINCREMENT:</strong> The <code>INTEGER PRIMARY KEY AUTOINCREMENT</code>
+        means SQLite automatically assigns a unique, ever-increasing ID to each new row. You
+        never need to specify the <code>id</code> when inserting &mdash; the database picks the
+        next available number. The <code>AUTOINCREMENT</code> keyword guarantees IDs are never
+        reused, even after rows are deleted.
+    </div>
+
+    <p>Presets are scoped to a <strong>server</strong>. This means you can have a preset called
+    "Raiding" on one server and a completely different "Raiding" preset on another. The
+    <code>UNIQUE(preset_name, server)</code> constraint enforces this &mdash; you cannot have
+    two presets with the same name on the same server.</p>
+
+    <h3>channels</h3>
+
+    <p>Each preset contains one or more channels. A channel is a tab in your chat window that
+    collects a specific type of chat (e.g., "Tells", "Guild", "Loot").</p>
+
+    <pre><code>CREATE TABLE channels (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    preset_id      INTEGER NOT NULL,
+    channel_id     INTEGER NOT NULL,
+    name           TEXT NOT NULL DEFAULT 'New',
+    enabled        INTEGER NOT NULL DEFAULT 0,
+    echo           TEXT NOT NULL DEFAULT '/say',
+    main_enable    INTEGER NOT NULL DEFAULT 1,
+    enable_links   INTEGER NOT NULL DEFAULT 0,
+    pop_out        INTEGER NOT NULL DEFAULT 0,
+    locked         INTEGER NOT NULL DEFAULT 0,
+    scale          REAL NOT NULL DEFAULT 1.0,
+    main_font_size INTEGER NOT NULL DEFAULT 16,
+    tab_order      INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(preset_id, channel_id),
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);</code></pre>
+
+    <p>Some important columns:</p>
+
+    <ul>
+        <li><strong>channel_id</strong> &mdash; A numeric identifier for the channel. The special
+        value <code>9000</code> is reserved for the Spam channel.</li>
+        <li><strong>echo</strong> &mdash; The command prefix used when you type into this
+        channel's input box (e.g., <code>/gu</code> for guild chat).</li>
+        <li><strong>main_enable</strong> &mdash; Whether this channel's messages also appear in
+        the Main tab.</li>
+        <li><strong>pop_out</strong> &mdash; Whether this channel is displayed in its own
+        <a href="rendering.html">separate window</a> instead of as a tab.</li>
+        <li><strong>tab_order</strong> &mdash; The position of this channel's tab in the tab bar.
+        Updated when you <a href="rendering.html">drag tabs</a> to reorder them.</li>
+    </ul>
+
+    <h3>events</h3>
+
+    <p>Each channel has one or more events. An event is a
+    <a href="chat-routing.html">Blech pattern</a> that determines which chat lines are routed
+    to this channel.</p>
+
+    <pre><code>CREATE TABLE events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_row_id  INTEGER NOT NULL,
+    event_index     INTEGER NOT NULL,
+    event_string    TEXT NOT NULL DEFAULT 'new',
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(channel_row_id, event_index),
+    FOREIGN KEY (channel_row_id) REFERENCES channels(id) ON DELETE CASCADE
+);</code></pre>
+
+    <p>For example, the "Tells" channel might have events with patterns like
+    <code>#*# tells you, '#*#'</code> and <code>#*# told you, '#*#'</code>.</p>
+
+    <h3>filters</h3>
+
+    <p>Each event can have one or more filters. A filter is a simple string match with an
+    associated color. When a chat line matches an event's Blech pattern <em>and</em> contains
+    a filter's text, it is displayed in that filter's color.</p>
+
+    <pre><code>CREATE TABLE filters (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_row_id   INTEGER NOT NULL,
+    filter_index   INTEGER NOT NULL,
+    filter_string  TEXT NOT NULL DEFAULT '',
+    color_r        REAL NOT NULL DEFAULT 1.0,
+    color_g        REAL NOT NULL DEFAULT 1.0,
+    color_b        REAL NOT NULL DEFAULT 1.0,
+    color_a        REAL NOT NULL DEFAULT 1.0,
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    hidden         INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(event_row_id, filter_index),
+    FOREIGN KEY (event_row_id) REFERENCES events(id) ON DELETE CASCADE
+);</code></pre>
+
+    <div class="note">
+        <strong>Color format:</strong> Colors are stored as floating-point values between
+        <code>0.0</code> and <code>1.0</code> in the database. When loaded into memory, the
+        plugin converts them to <code>uint8_t</code> values (0&ndash;255) for use with ImGui.
+        For example, a database value of <code>1.0</code> becomes <code>255</code>, and
+        <code>0.5</code> becomes <code>127</code>.
+    </div>
+
+    <p>The <strong>hidden</strong> flag lets you keep a filter defined but suppress its output.
+    The line still matches, but it is not displayed in the channel.</p>
+
+    <h3>char_active_preset</h3>
+
+    <p>Tracks which preset each character is currently using.</p>
+
+    <pre><code>CREATE TABLE char_active_preset (
+    char_name TEXT NOT NULL,
+    server    TEXT NOT NULL DEFAULT '',
+    preset_id INTEGER NOT NULL,
+    PRIMARY KEY (char_name, server),
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);</code></pre>
+
+    <p>When a character logs in, the plugin looks up their active preset here. If no row
+    exists, the plugin creates a "Default" preset and assigns it.</p>
+
+    <h3>char_channel_overrides</h3>
+
+    <p>This is the most advanced table. It allows a character to mix and match channels from
+    <em>different</em> presets.</p>
+
+    <pre><code>CREATE TABLE char_channel_overrides (
+    char_name  TEXT NOT NULL,
+    server     TEXT NOT NULL DEFAULT '',
+    channel_id INTEGER NOT NULL,
+    preset_id  INTEGER NOT NULL,
+    PRIMARY KEY (char_name, server, channel_id),
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);</code></pre>
+
+    <p>For example, you might use the "Raiding" preset overall but pull in the "Tells" channel
+    from a different preset that has special tell filters. The overrides table makes this
+    possible without duplicating the entire preset.</p>
+
+    <h3>Indexes</h3>
+
+    <p>Three indexes are created for query performance:</p>
+
+    <pre><code>CREATE INDEX IF NOT EXISTS idx_channels_preset ON channels(preset_id);
+CREATE INDEX IF NOT EXISTS idx_events_channel  ON events(channel_row_id);
+CREATE INDEX IF NOT EXISTS idx_filters_event   ON filters(event_row_id);</code></pre>
+
+    <p>These speed up the nested queries used when loading settings (preset &rarr; channels
+    &rarr; events &rarr; filters).</p>
+
+    <h2 id="preset-system">Preset System</h2>
+
+    <p>Presets let you maintain multiple complete chat configurations and switch between them.
+    Here are the key operations:</p>
+
+    <h3>Getting the Active Preset</h3>
+
+    <p><code>GetOrCreatePreset()</code> is the entry point. It checks the
+    <code>char_active_preset</code> table for the current character. If no preset is assigned,
+    it creates one named <strong>"Default"</strong> and assigns it. This ensures every
+    character always has a valid preset.</p>
+
+    <h3>Listing Presets</h3>
+
+    <p><code>GetPresetList()</code> returns all presets for the current server. This is used to
+    populate the <a href="rendering.html">Presets menu</a> in the menu bar.</p>
+
+    <h3>Creating and Copying Presets</h3>
+
+    <ul>
+        <li><code>SaveAsNewPreset()</code> &mdash; Creates a brand new preset using your current
+        channel/event/filter configuration. You provide a name, and the current settings are
+        saved under that name.</li>
+        <li><code>CopyPreset()</code> &mdash; Duplicates an existing preset with a new name.
+        Useful when you want to make small tweaks to an existing setup without modifying the
+        original.</li>
+    </ul>
+
+    <h3>Switching Presets</h3>
+
+    <p>Switching presets is a multi-step process:</p>
+
+    <ol>
+        <li><strong>Save</strong> the current settings (so nothing is lost)</li>
+        <li><strong>SetActivePreset()</strong> &mdash; Updates the <code>char_active_preset</code>
+        table to point to the new preset</li>
+        <li><strong>Unload</strong> &mdash; Tears down the current Blech events and clears
+        in-memory channel data</li>
+        <li><strong>Load</strong> &mdash; Reads the new preset's channels, events, and filters
+        from the database and registers fresh Blech events</li>
+    </ol>
+
+    <p>This save-switch-unload-load sequence ensures a clean transition with no leftover state
+    from the previous preset.</p>
+
+    <h2>Loading and Saving</h2>
+
+    <h3>Loading Settings</h3>
+
+    <p><code>LoadSettings()</code> reads the full channel tree from the database using
+    <strong>nested queries</strong>:</p>
+
+    <ol>
+        <li>Query all <strong>channels</strong> for the active preset</li>
+        <li>For each channel, query its <strong>events</strong></li>
+        <li>For each event, query its <strong>filters</strong></li>
+    </ol>
+
+    <p>This builds up the complete in-memory representation of your chat configuration. After
+    loading, the plugin registers Blech events for each enabled event pattern (see
+    <a href="chat-routing.html">Chat Routing</a>).</p>
+
+    <h3>Saving Settings</h3>
+
+    <p><code>SaveSettings()</code> writes everything back to the database. It wraps the entire
+    operation in a <strong>transaction</strong> for safety.</p>
+
+    <div class="note">
+        <strong>What is a transaction?</strong> A transaction groups multiple database
+        operations into a single all-or-nothing unit. If any operation within the transaction
+        fails, the entire batch is rolled back as if nothing happened. This prevents your
+        database from ending up in a half-written state (for example, channels deleted but
+        not yet re-inserted).
+    </div>
+
+    <pre><code>BEGIN TRANSACTION;
+-- Delete all existing channels for this preset (CASCADE removes events and filters too)
+-- Re-insert all channels, events, and filters from memory
+-- Update the preset's updated_at timestamp
+COMMIT;</code></pre>
+
+    <p>The "delete everything then re-insert" approach is simpler than trying to figure out
+    what changed. Because the foreign keys use <code>ON DELETE CASCADE</code>, deleting the
+    channels automatically removes their events and filters too. Since it all happens inside
+    a transaction, either everything is saved or nothing is &mdash; you will not end up with
+    a half-written state if something goes wrong.</p>
+
+    <p>After re-inserting all channels, the save also updates the preset's
+    <code>updated_at</code> timestamp so you can see when a preset was last modified.</p>
+
+    <h3>Global Settings</h3>
+
+    <p><code>LoadGlobalSettings()</code> and <code>SaveGlobalSettings()</code> handle the
+    key-value pairs in the <code>global_settings</code> table. These are loaded separately
+    from channel data because they apply regardless of which preset is active.</p>
+
+    <p>Saving uses an <strong>upsert</strong> strategy (<code>INSERT OR REPLACE</code>): if a
+    key already exists for this character, its value is overwritten; if it does not exist yet,
+    a new row is created. The entire batch of key-value writes is wrapped in a transaction for
+    performance and safety.</p>
+
+    <h2>Default Channel Seeding</h2>
+
+    <p>When a character loads MQMyChat for the first time and has no channels configured,
+    <code>SeedDefaultChannels()</code> populates the database with <strong>14 default
+    channels</strong>:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Channel</th>
+                <th>Channel ID</th>
+                <th>Default Echo</th>
+                <th>What It Captures</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Consider</td><td>0</td><td><code>/say</code></td><td>Consider messages (/con) with color-coded threat levels</td></tr>
+            <tr><td>Combat</td><td>2</td><td><code>/say</code></td><td>Melee and spell damage, heals, misses, backstabs</td></tr>
+            <tr><td>Crits</td><td>3</td><td><code>/say</code></td><td>Critical hits and critical heals</td></tr>
+            <tr><td>Exp AA pts</td><td>4</td><td><code>/say</code></td><td>Experience and AA point gain messages</td></tr>
+            <tr><td>Faction</td><td>5</td><td><code>/say</code></td><td>Faction change messages</td></tr>
+            <tr><td>Guild</td><td>6</td><td><code>/gu</code></td><td>Guild chat (disabled by default)</td></tr>
+            <tr><td>Loot</td><td>7</td><td><code>/say</code></td><td>Loot messages</td></tr>
+            <tr><td>OOC</td><td>11</td><td><code>/ooc</code></td><td>Out-of-character chat</td></tr>
+            <tr><td>Raid</td><td>12</td><td><code>/rsay</code></td><td>Raid chat (disabled by default)</td></tr>
+            <tr><td>Say</td><td>13</td><td><code>/say</code></td><td>Say and group chat</td></tr>
+            <tr><td>Shout</td><td>14</td><td><code>/shout</code></td><td>Shouts and auctions</td></tr>
+            <tr><td>Tells</td><td>15</td><td><code>/tell</code></td><td>Tell messages (incoming and outgoing)</td></tr>
+            <tr><td>Spam</td><td>9000</td><td><code>/say</code></td><td>Catch-all for unmatched messages (disabled by default)</td></tr>
+            <tr><td>NPC</td><td>9100</td><td><code>/say</code></td><td>NPC dialogue</td></tr>
+        </tbody>
+    </table>
+
+    <p>Each default channel comes with a full set of event patterns and filter configurations
+    already defined. The seed only runs when the channels list is <strong>empty</strong> on
+    first load &mdash; it will not overwrite your customizations.</p>
+
+    <h2>Database Migration</h2>
+
+    <p>MQMyChat started life as a Lua module (part of the
+    <a href="https://github.com/grimmier378/MyUI" target="_blank">MyUI project</a>). If you previously used the Lua version, your
+    settings are stored in a different location:</p>
+
+    <pre><code>gPathConfig/MyUI/MyChat/MyChat.db</code></pre>
+
+    <p>When MQMyChat initializes and finds that <code>MyChat.db</code> does not exist in the
+    resources directory, it checks the old Lua module location. If the Lua database file is
+    found, the plugin <strong>copies it</strong> to the new location. This is a one-time
+    migration &mdash; after the copy, the plugin uses the new file exclusively.</p>
+
+    <div class="note">
+        <strong>Schema compatibility:</strong> The database schema is identical between the
+        C++ plugin and the Lua module. No table structure changes are needed during migration
+        &mdash; the file is copied as-is.
+    </div>
+
+    <h2>Channel Overrides</h2>
+
+    <p>Channel overrides are a power-user feature that lets you cherry-pick individual channels
+    from different presets. Instead of switching your entire preset, you can say "use the Tells
+    channel from Preset A but everything else from Preset B."</p>
+
+    <h3>How They Work</h3>
+
+    <ul>
+        <li><code>LoadChannelOverrides()</code> &mdash; Reads the
+        <code>char_channel_overrides</code> table for the current character. For each override
+        found, it loads that specific channel from the referenced preset instead of the active
+        preset.</li>
+        <li><code>SaveChannelOverride()</code> &mdash; Saves an override for a specific
+        channel/preset pair. You specify which <code>channel_id</code> should come from which
+        <code>preset_id</code>.</li>
+    </ul>
+
+    <p>Overrides are per-character and per-server, so different characters can mix and match
+    differently even on the same server.</p>
+
+    <div class="warning">
+        <strong>Keep in mind:</strong> If you delete a preset that another character's overrides
+        reference, those overrides will break. The foreign key constraint will prevent the
+        deletion in most cases, but it is good practice to check for overrides before removing
+        a preset.
+    </div>
+
+    <h2>Summary</h2>
+
+    <p>Here is the big picture of how data flows through the database layer:</p>
+
+    <div class="diagram">Plugin Loads
+    │
+    ├─ Open() ──&gt; Connect to SQLite, set pragmas
+    ├─ InitSchema() ──&gt; Create tables if missing
+    ├─ Migration check ──&gt; Copy Lua DB if needed
+    ├─ GetOrCreatePreset() ──&gt; Find or create active preset
+    ├─ LoadSettings() ──&gt; Channels → Events → Filters
+    ├─ LoadGlobalSettings() ──&gt; Key-value pairs
+    └─ LoadChannelOverrides() ──&gt; Mix-and-match channels
+
+Plugin Runs
+    │
+    ├─ SaveSettings() ──&gt; Transaction: delete + re-insert
+    ├─ SaveGlobalSettings() ──&gt; Upsert key-value pairs
+    └─ Preset operations ──&gt; Create, copy, switch
+
+Plugin Unloads
+    │
+    └─ Close() ──&gt; WAL checkpoint, disconnect</div>
+
+    <p>For details on how the loaded data is used to route chat, see
+    <a href="chat-routing.html">Chat Routing &amp; Tokens</a>. For how the settings UI lets
+    you edit this data, see <a href="rendering.html">ImGui Rendering</a>.</p>
+
+    <div class="page-nav">
+        <strong>Next:</strong> <a href="rendering.html">ImGui Rendering</a> &mdash; how
+        windows, tabs, and the configuration GUI are drawn.
+    </div>
+</main>
+
+</body>
+</html>
