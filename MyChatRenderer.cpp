@@ -517,6 +517,7 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     ImGui::Text("Filters:");
 
                 int filterToRemove = -1;
+                int filterSwapFrom = -1, filterSwapTo = -1;
                 for (int fi = 1; fi < static_cast<int>(evt.filters.size()); fi++)
                 {
                     auto& flt = evt.filters[fi];
@@ -552,7 +553,34 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     if (ImGui::SmallButton("X##flt"))
                         filterToRemove = fi;
 
+                    if (fi > 1)
+                    {
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton(ICON_MD_ARROW_UPWARD "##flt"))
+                        {
+                            filterSwapFrom = fi;
+                            filterSwapTo = fi - 1;
+                        }
+                    }
+
+                    if (fi + 1 < static_cast<int>(evt.filters.size()))
+                    {
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton(ICON_MD_ARROW_DOWNWARD "##flt"))
+                        {
+                            filterSwapFrom = fi;
+                            filterSwapTo = fi + 1;
+                        }
+                    }
+
                     ImGui::PopID();
+                }
+
+                if (filterSwapFrom >= 1 && filterSwapTo >= 1)
+                {
+                    std::swap(evt.filters[filterSwapFrom], evt.filters[filterSwapTo]);
+                    evt.filters[filterSwapFrom].filterIndex = filterSwapFrom;
+                    evt.filters[filterSwapTo].filterIndex = filterSwapTo;
                 }
 
                 if (filterToRemove >= 1)
