@@ -644,11 +644,29 @@ void MyChatEngine::SaveWindowVisibility()
 <p>Simple: reset Blech and clear the map. Called during
     <code>UnloadCharacterSettings()</code> and <code>Shutdown()</code>.</p>
 
+<h3>RefreshBlechEvents() (line 415)</h3>
+
+<pre><code>void MyChatEngine::RefreshBlechEvents()
+{
+    UnregisterBlechEvents();
+    RegisterBlechEvents();
+}</code></pre>
+
+<p>A convenience method that unregisters all Blech events and immediately re-registers
+    them. This is called whenever a channel or event is toggled on or off in the UI, so
+    that the Blech pattern matcher reflects the current enabled/disabled state without
+    requiring a full settings reload.</p>
+
 <h3>When registration happens</h3>
 
 <p>Blech events are registered (or re-registered) at these points:</p>
 <ul>
     <li><code>LoadCharacterSettings()</code> &mdash; Character enters the game.</li>
+    <li><strong>Channel enabled checkbox</strong> (Channels menu or Config table) &mdash;
+        Calls <code>RefreshBlechEvents()</code> on toggle so the change takes effect
+        immediately.</li>
+    <li><strong>Event enabled checkbox</strong> (Edit Channel GUI) &mdash; Calls
+        <code>RefreshBlechEvents()</code> on toggle for instant effect.</li>
     <li>After saving from the Edit GUI &mdash; The user may have changed event strings.</li>
     <li><code>/mychat reload</code> &mdash; Calls <code>UnloadCharacterSettings</code>
         then <code>LoadCharacterSettings</code>.</li>

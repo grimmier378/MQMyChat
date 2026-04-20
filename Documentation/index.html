@@ -91,20 +91,22 @@
         <tbody>
             <tr>
                 <td><code>MQMyChat.cpp</code></td>
-                <td>1056</td>
+                <td>1065</td>
                 <td>Plugin entry point. Contains <code>MyChatEngine</code> implementation:
-                chat routing, Blech event setup, token substitution, command handling,
+                chat routing, Blech event setup (including <code>RefreshBlechEvents()</code>
+                for live channel/event toggling), token substitution, command handling,
                 the <code>AppendToConsole()</code> method (which handles timestamp
                 injection), and the hooks into MQ's <code>OnIncomingChat</code> /
                 <code>OnWriteChatColor</code> callbacks.</td>
             </tr>
             <tr>
                 <td><code>MQMyChat.h</code></td>
-                <td>105</td>
+                <td>107</td>
                 <td><code>MyChatEngine</code> class declaration. Defines the central engine
                 that ties together the database, renderer, Blech matcher, Lua state, and
-                all channel data. Declares the <code>AppendToConsole()</code> method that
-                all console output routes through.</td>
+                all channel data. Declares <code>RefreshBlechEvents()</code> and the
+                <code>AppendToConsole()</code> method that all console output routes
+                through.</td>
             </tr>
             <tr>
                 <td><code>MyChatChannel.h</code></td>
@@ -136,10 +138,11 @@
             </tr>
             <tr>
                 <td><code>MyChatRenderer.cpp</code></td>
-                <td>955</td>
+                <td>961</td>
                 <td>ImGui rendering implementation. Draws chat windows, tab bars, the
-                settings/configuration GUI, the channel editor, and handles user
-                interaction like scrolling and tab reordering.</td>
+                settings/configuration GUI, the channel editor (with live Blech refresh
+                on channel/event toggle), and handles user interaction like scrolling
+                and tab reordering.</td>
             </tr>
             <tr>
                 <td><code>MyChatTLO.h</code></td>

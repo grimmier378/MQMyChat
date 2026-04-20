@@ -809,9 +809,6 @@ if (enableSpam)
         {
             AppendToConsole(spamIt->second.console,
                 line, MQColor(240, 240, 240));
-            if (spamIt->second.mainEnable && mainConsole)
-                AppendToConsole(mainConsole,
-                    line, MQColor(240, 240, 240));
         }
     }
 }</code></pre>
@@ -820,6 +817,14 @@ if (enableSpam)
     Note that even the spam channel routes through <code>AppendToConsole()</code>, so
     spam lines also receive timestamps when the timestamps option is enabled.
 </p>
+
+<div class="note">
+    <strong>No main console echo for spam:</strong> Unlike regular channels, the Spam
+    channel does <em>not</em> echo lines to the main console, even if its
+    <code>mainEnable</code> flag is set. This is intentional &mdash; the spam channel
+    captures every unclaimed line, and echoing all of that to the main tab would
+    flood it with noise, defeating the purpose of having categorized channels.
+</div>
 
 <h3>Constants</h3>
 
@@ -904,9 +909,9 @@ static constexpr float CLAIMED_TTL             = 0.5f;</code></pre>
         <code>appendNewLine</code> value. This multi-segment approach was chosen
         because the previous single-string method (using MQ color codes like
         <code>\ay</code>, <code>\aw</code>, <code>\ax</code>) caused the
-        <code>\ax</code> reset code to override the <code>defaultColor</code>
+        <code>\ax</code> color-pop code to override the <code>defaultColor</code>
         parameter passed to <code>AppendText</code>, forcing all message text to
-        render white instead of the filter-assigned color.
+        render in the base color instead of the filter-assigned color.
     </li>
 </ol>
 

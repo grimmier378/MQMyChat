@@ -154,7 +154,11 @@
             </tr>
             <tr>
                 <td><strong>Channels menu</strong></td>
-                <td>Checkboxes to enable or disable each channel</td>
+                <td>Checkboxes to enable or disable each channel. The Spam channel
+                (ID 9000) is skipped in this menu because it has its own toggle in the
+                Options menu. When a channel's enabled checkbox is toggled, the plugin
+                calls <code>RefreshBlechEvents()</code> immediately so the change takes
+                effect without needing to save or reload.</td>
             </tr>
             <tr>
                 <td><strong>Links menu</strong></td>
@@ -417,7 +421,9 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Enabled</td><td>Checkbox to turn the channel on or off</td></tr>
+            <tr><td>Enabled</td><td>Checkbox to turn the channel on or off. Toggling this
+            calls <code>RefreshBlechEvents()</code> immediately so Blech patterns are
+            updated without needing to save.</td></tr>
             <tr><td>Name</td><td>The channel's display name</td></tr>
             <tr><td>Echo</td><td>The echo command (e.g., <code>/gu</code>)</td></tr>
             <tr><td>Events</td><td>Number of events defined for this channel</td></tr>
@@ -427,8 +433,9 @@
     </table>
 
     <div class="note">
-        <strong>Note:</strong> The Spam channel (channel ID 9000) does not appear in this
-        table. It is toggled via the Options menu in the main window's menu bar instead.
+        <strong>Note:</strong> The Spam channel (channel ID 9000) does not appear in either
+        the Config table or the Channels menu. It is toggled via the Options menu in the
+        main window's menu bar instead.
     </div>
 
     <h3>Adding a Channel</h3>
@@ -482,7 +489,8 @@
 
     <ul>
         <li><strong>Enabled</strong> checkbox &mdash; Toggle the event on/off without deleting
-        it</li>
+        it. Toggling this calls <code>RefreshBlechEvents()</code> immediately so the
+        Blech pattern is registered or unregistered right away.</li>
         <li><strong>Remove Event</strong> button &mdash; Delete the event entirely</li>
         <li><strong>Pattern</strong> input &mdash; The
         <a href="chat-routing.html">Blech pattern</a> this event matches against</li>
@@ -695,7 +703,7 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
     │
     ├─ RenderConfigGUI() [if open]
     │   ├─ ApplyTheme()
-    │   ├─ Channel table (Enabled, Name, Echo, Events, Actions)
+    │   ├─ Channel table (Enabled→RefreshBlechEvents, Name, Echo, Events, Actions)
     │   ├─ Add Channel form
     │   ├─ Save All button
     │   └─ ResetTheme()
@@ -704,6 +712,7 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
         ├─ ApplyTheme()
         ├─ Channel settings (Name, Echo, Font Size, etc.)
         ├─ Events list with collapsible headers
+        │   ├─ Enabled checkbox → RefreshBlechEvents() on toggle
         │   └─ Filters per event (pattern, color, toggles, reorder arrows)
         ├─ Add Event input
         ├─ Save button → unregister/register Blech events

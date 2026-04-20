@@ -611,9 +611,10 @@ print("Window locked:", locked)</code></pre>
         via multiple <code>AppendText</code> calls with explicit <code>MQColor</code>
         values per segment). This multi-segment approach is critical: an earlier
         implementation used a single string with MQ color codes
-        (<code>\ay[\aw...\ay]\ax</code>), but the <code>\ax</code> reset code overrode
-        the <code>defaultColor</code> parameter passed to <code>AppendText</code>,
-        causing all message text to render white instead of the filter-assigned color.
+        (<code>\ay[\aw...\ay]\ax</code>), but the <code>\ax</code> color-pop code
+        overrode the <code>defaultColor</code> parameter passed to
+        <code>AppendText</code>, causing all message text to render in the base color
+        instead of the filter-assigned color.
         The current approach gives each piece (brackets, time digits, message text) an
         explicit color and preserves the original message color. If you bypass
         <code>AppendToConsole()</code>, your output will not have timestamps even when

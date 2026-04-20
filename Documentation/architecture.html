@@ -149,7 +149,11 @@
         <li><strong>Chat hooks:</strong> <code>OnIncomingChat</code> and
         <code>OnWriteChatColor</code>. These intercept chat from EQ.</li>
         <li><strong>Blech setup:</strong> Registering patterns with the Blech matcher and
-        defining the callback that fires on matches.</li>
+        defining the callback that fires on matches. Includes
+        <code>RefreshBlechEvents()</code>, a convenience method that unregisters and
+        re-registers all Blech events in one call &mdash; used by the UI when toggling
+        channels or events on/off so changes take effect immediately without requiring
+        a full save or reload.</li>
         <li><strong>Console output:</strong> The <code>AppendToConsole()</code> method,
         which is the single chokepoint for all text written to any ConsoleWidget. It
         handles timestamp injection (stripping duplicate timestamps and optionally
