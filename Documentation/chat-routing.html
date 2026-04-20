@@ -86,8 +86,12 @@ EverQuest generates chat          MQ plugin calls WriteChatf()
                         |
            +--- apply filters ---+
            |                     |
-        discard             append to channel
-                            console with color
+        discard          AppendToConsole()
+                    (strip dupe timestamps,
+                     optionally prepend new
+                     colored timestamp, then
+                     call AppendText on the
+                     channel's ConsoleWidget)
 </div>
 
 <h3>Step 1: EQ or MQ produces a line</h3>
@@ -233,7 +237,7 @@ EverQuest generates chat          MQ plugin calls WriteChatf()
 </p>
 
 <!-- ================================================================== -->
-<h2 id="filter-system">Filter System (Second Pass: RouteToChannel, line 465)</h2>
+<h2 id="filter-system">Filter System (Second Pass: RouteToChannel)</h2>
 
 <p>
     After Blech matches a line to a channel (first pass), <code>RouteToChannel</code> runs the
@@ -344,11 +348,19 @@ EverQuest generates chat          MQ plugin calls WriteChatf()
 <h3>Appending to consoles</h3>
 
 <p>
-    After a line passes filter evaluation, it is appended to the channel's own ConsoleWidget.
-    If the channel has <code>mainEnable = true</code> (the default), the line is also
-    appended to the main "All" console. This is how lines from multiple channels can all
+    After a line passes filter evaluation, it is appended to the channel's own ConsoleWidget
+    via <code>AppendToConsole()</code> &mdash; the central output method that handles
+    <a href="#timestamps">timestamp injection</a>. If the channel has
+    <code>mainEnable = true</code> (the default), the line is also appended to the main
+    "All" console through the same method. This is how lines from multiple channels can all
     appear together in the main tab.
 </p>
+
+<pre><code>if (channel.console)
+    AppendToConsole(channel.console, line, outputColor);
+
+if (channel.mainEnable && mainConsole)
+    AppendToConsole(mainConsole, line, outputColor);</code></pre>
 
 <h3>Consider channel special case</h3>
 
@@ -390,7 +402,7 @@ m_claimedLines[lineStr] = ClaimedLine{
 };</code></pre>
 
 <!-- ================================================================== -->
-<h2 id="token-substitution">Token Substitution (SubstituteTokens, line 788)</h2>
+<h2 id="token-substitution">Token Substitution (SubstituteTokens)</h2>
 
 <p>
     Tokens let you write filter patterns that adapt to the current game state. Instead of
@@ -516,7 +528,7 @@ m_claimedLines[lineStr] = ClaimedLine{
     </tr>
     <tr>
         <td><code>NO2</code></td>
-        <td><code>MatchFilter</code> (line 996) &mdash; stripped <em>before</em>
+        <td><code>MatchFilter</code> &mdash; stripped <em>before</em>
             token substitution and pattern matching</td>
         <td>Invert the match result. If the pattern would match, it does not;
             if it would not match, it does.</td>
@@ -525,7 +537,7 @@ m_claimedLines[lineStr] = ClaimedLine{
     </tr>
     <tr>
         <td><code>^</code></td>
-        <td><code>PatternFind</code> (line 687) &mdash; checked <em>after</em>
+        <td><code>PatternFind</code> &mdash; checked <em>after</em>
             token substitution, during pattern matching</td>
         <td>Anchor the pattern to the start of the line. Only matches if the line
             begins with the text after <code>^</code>.</td>
@@ -565,7 +577,7 @@ m_claimedLines[lineStr] = ClaimedLine{
 }</code></pre>
 
 <!-- ================================================================== -->
-<h2 id="pattern-matching">Pattern Matching (PatternFind, line 687)</h2>
+<h2 id="pattern-matching">Pattern Matching (PatternFind)</h2>
 
 <p>
     While Blech handles the first pass (event matching), <code>PatternFind</code> is the
@@ -601,7 +613,7 @@ m_claimedLines[lineStr] = ClaimedLine{
 </p>
 
 <div class="note">
-    <strong>Detection rule:</strong> <code>IsLuaPattern</code> (line 677) checks whether a
+    <strong>Detection rule:</strong> <code>IsLuaPattern</code> checks whether a
     <code>%</code> character appears anywhere in the pattern except as the very last
     character. A trailing <code>%</code> by itself does not trigger Lua mode. However, if
     your filter accidentally contains a <code>%</code> elsewhere (for example in a URL like
@@ -666,7 +678,7 @@ m_claimedLines[lineStr] = ClaimedLine{
     between NPC names and player names in a chat line. Two helper functions handle this.
 </p>
 
-<h3>ExtractNameFromLine (line 733)</h3>
+<h3>ExtractNameFromLine</h3>
 
 <p>
     Scans the line for known keywords that indicate who is speaking or acting, and extracts
@@ -710,7 +722,7 @@ m_claimedLines[lineStr] = ClaimedLine{
     on emulated servers.
 </div>
 
-<h3>IsNPCName (line 715)</h3>
+<h3>IsNPCName</h3>
 
 <p>
     Takes a name, converts spaces to underscores (EQ stores NPC names with underscores
@@ -795,14 +807,19 @@ if (enableSpam)
         if (spamIt != settings.channels.end()
             && spamIt->second.console)
         {
-            spamIt->second.console->AppendText(
-                line, MQColor(240, 240, 240), true);
+            AppendToConsole(spamIt->second.console,
+                line, MQColor(240, 240, 240));
             if (spamIt->second.mainEnable && mainConsole)
-                mainConsole->AppendText(
-                    line, MQColor(240, 240, 240), true);
+                AppendToConsole(mainConsole,
+                    line, MQColor(240, 240, 240));
         }
     }
 }</code></pre>
+
+<p>
+    Note that even the spam channel routes through <code>AppendToConsole()</code>, so
+    spam lines also receive timestamps when the timestamps option is enabled.
+</p>
 
 <h3>Constants</h3>
 
@@ -825,6 +842,176 @@ static constexpr float CLAIMED_TTL             = 0.5f;</code></pre>
     <strong>Note:</strong> The Spam channel only processes lines from
     <code>ProcessIncomingChat</code> (EQ chat), not from <code>ProcessWriteChat</code>
     (MQ plugin output). This avoids flooding the Spam tab with plugin debug messages.
+</div>
+
+<!-- ================================================================== -->
+<h2 id="timestamps">AppendToConsole and Timestamps</h2>
+
+<p>
+    Every piece of text that appears in any MQMyChat console &mdash; whether it came from
+    Blech-routed chat, the spam channel, <code>SendToChannel()</code>, or local echo &mdash;
+    passes through a single method: <code>AppendToConsole()</code>. This method is the
+    chokepoint where timestamp injection happens. No code in the plugin calls
+    <code>console-&gt;AppendText()</code> directly anymore; everything goes through this
+    method.
+</p>
+
+<h3>Method signature</h3>
+
+<pre><code>void MyChatEngine::AppendToConsole(
+    const std::shared_ptr&lt;mq::imgui::ConsoleWidget&gt;&amp; console,
+    std::string_view text, MQColor color,
+    bool appendNewLine = true);</code></pre>
+
+<h3>How it works</h3>
+
+<p>
+    When <code>settings.timeStamps</code> is <strong>false</strong>, the method simply
+    forwards the text and color directly to <code>console-&gt;AppendText()</code> with no
+    modifications.
+</p>
+
+<p>
+    When <code>settings.timeStamps</code> is <strong>true</strong>, the method does three
+    things before writing:
+</p>
+
+<ol>
+    <li><strong>Strip existing timestamps:</strong> Some incoming chat lines from EverQuest
+        already contain timestamps in the format <code>[HH:MM:SS]</code>. To avoid doubled
+        timestamps (like <code>[14:30:22] [14:30:22] Healbot tells you...</code>), the
+        method scans the text for a bracket-delimited timestamp pattern. It looks for a
+        <code>[</code> character, then checks if positions +3 and +6 are colons and position
+        +9 is <code>]</code>. If this pattern is found, the entire <code>[HH:MM:SS]</code>
+        segment (plus any trailing space) is removed from the text.</li>
+    <li><strong>Get the current time:</strong> Calls the C standard library
+        <code>time()</code> and <code>localtime_s()</code> to get the current local time,
+        then formats it as <code>HH:MM:SS</code> using <code>strftime()</code>.</li>
+    <li><strong>Prepend a colored timestamp using multiple AppendText calls:</strong>
+        Instead of building a single string with MQ color codes, the method makes four
+        separate <code>AppendText</code> calls, each with an explicit
+        <code>MQColor</code> value:
+        <ul>
+            <li><code>"["</code> in yellow <code>MQColor(255, 255, 0)</code></li>
+            <li><code>timeBuf</code> (the <code>HH:MM:SS</code> digits) in white
+                <code>MQColor(255, 255, 255)</code></li>
+            <li><code>"] "</code> in yellow <code>MQColor(255, 255, 0)</code></li>
+            <li>The actual chat text in the original <code>color</code> parameter
+                passed to <code>AppendToConsole()</code></li>
+        </ul>
+        The first three calls use <code>appendNewLine = false</code> so they stay on
+        the same line; only the final call (the message text) uses the real
+        <code>appendNewLine</code> value. This multi-segment approach was chosen
+        because the previous single-string method (using MQ color codes like
+        <code>\ay</code>, <code>\aw</code>, <code>\ax</code>) caused the
+        <code>\ax</code> reset code to override the <code>defaultColor</code>
+        parameter passed to <code>AppendText</code>, forcing all message text to
+        render white instead of the filter-assigned color.
+    </li>
+</ol>
+
+<h3>Full implementation</h3>
+
+<pre><code>void MyChatEngine::AppendToConsole(
+    const std::shared_ptr&lt;mq::imgui::ConsoleWidget&gt;&amp; console,
+    std::string_view text, MQColor color, bool appendNewLine)
+{
+    if (!console)
+        return;
+
+    if (settings.timeStamps)
+    {
+        std::string cleaned(text);
+        auto bracket = cleaned.find('[');
+        if (bracket != std::string::npos
+            &amp;&amp; bracket + 9 &lt; cleaned.size()
+            &amp;&amp; cleaned[bracket + 3] == ':'
+            &amp;&amp; cleaned[bracket + 6] == ':'
+            &amp;&amp; cleaned[bracket + 9] == ']')
+        {
+            size_t end = bracket + 10;
+            if (end &lt; cleaned.size() &amp;&amp; cleaned[end] == ' ')
+                end++;
+            cleaned.erase(bracket, end - bracket);
+        }
+
+        time_t now = time(nullptr);
+        struct tm local;
+        localtime_s(&amp;local, &amp;now);
+        char timeBuf[16];
+        strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &amp;local);
+
+        MQColor yellow(255, 255, 0);
+        MQColor white(255, 255, 255);
+        console-&gt;AppendText("[", yellow, false);
+        console-&gt;AppendText(timeBuf, white, false);
+        console-&gt;AppendText("] ", yellow, false);
+        console-&gt;AppendText(cleaned, color, appendNewLine);
+    }
+    else
+    {
+        console-&gt;AppendText(text, color, appendNewLine);
+    }
+}</code></pre>
+
+<h3>Where AppendToConsole is called</h3>
+
+<p>
+    Every output path in the plugin routes through this method. Here is the complete list:
+</p>
+
+<table>
+    <tr>
+        <th>Call Site</th>
+        <th>File</th>
+        <th>What It Outputs</th>
+    </tr>
+    <tr>
+        <td><code>RouteToChannel()</code></td>
+        <td>MQMyChat.cpp</td>
+        <td>Blech-matched chat lines to channel consoles and the main console</td>
+    </tr>
+    <tr>
+        <td><code>ProcessIncomingChat()</code> (spam)</td>
+        <td>MQMyChat.cpp</td>
+        <td>Unclaimed lines to the spam channel and optionally the main console</td>
+    </tr>
+    <tr>
+        <td><code>SendToChannel()</code></td>
+        <td>MQMyChat.cpp</td>
+        <td>Externally injected messages (from TLO Send, <code>/mychat send</code>, or
+            other plugins) to channel consoles and the main console</td>
+    </tr>
+    <tr>
+        <td><code>DrawConsole()</code></td>
+        <td>MyChatRenderer.cpp</td>
+        <td>Local echo of user-typed text (<code>&gt; text</code>) to the channel console</td>
+    </tr>
+    <tr>
+        <td><code>DrawMainConsole()</code></td>
+        <td>MyChatRenderer.cpp</td>
+        <td>Local echo of user-typed text to the main console</td>
+    </tr>
+</table>
+
+<h3>The Timestamps toggle</h3>
+
+<p>
+    The <code>settings.timeStamps</code> boolean is controlled by the
+    <strong>Options &gt; Timestamps</strong> checkbox in the main window's menu bar. It
+    defaults to <code>true</code>. Changing it takes effect immediately &mdash; the next
+    line appended to any console will either have or not have a timestamp. Previously
+    displayed lines are not retroactively modified. The setting is persisted in the
+    <a href="database.html"><code>global_settings</code></a> table under the key
+    <code>timeStamps</code>.
+</p>
+
+<div class="note">
+    <strong>Why strip existing timestamps?</strong> EverQuest can be configured to include
+    timestamps in its own chat output. If the user has both EQ timestamps and MQMyChat
+    timestamps enabled, the same line would show two timestamps. The stripping logic
+    detects the <code>[HH:MM:SS]</code> format and removes it before prepending the
+    MQMyChat timestamp, ensuring each line has at most one.
 </div>
 
 <!-- ================================================================== -->
@@ -856,8 +1043,13 @@ static constexpr float CLAIMED_TTL             = 0.5f;</code></pre>
         <code>PatternFind</code> checks if "Grimmier" appears in the line. It does
         ("incoming heal on Grimmier"), so this filter matches. Output color becomes
         green.</li>
-    <li>The line is appended to the Tells channel console in green, and to the main
-        console if <code>mainEnable</code> is on.</li>
+    <li><code>AppendToConsole()</code> is called for the Tells channel console (and the
+        main console if <code>mainEnable</code> is on). If timestamps are enabled, the
+        method strips any existing <code>[HH:MM:SS]</code> timestamp, then makes four
+        separate <code>AppendText()</code> calls: <code>"["</code> in yellow,
+        <code>"14:30:22"</code> in white, <code>"] "</code> in yellow, and the message
+        text in green (the filter-assigned color). Each segment gets an explicit
+        <code>MQColor</code> value, preserving the filter color on the actual message.</li>
     <li>The line is added to <code>m_claimedLines</code>, so the Spam channel will
         skip it.</li>
 </ol>

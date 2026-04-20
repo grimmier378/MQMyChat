@@ -179,7 +179,7 @@ run(fmt::format(
 
     <h3>Step 1: Open SubstituteTokens()</h3>
 
-    <p>In <strong>MQMyChat.cpp</strong>, find <code>SubstituteTokens()</code> (line 788).
+    <p>In <strong>MQMyChat.cpp</strong>, find <code>SubstituteTokens()</code> (line 830).
     This function takes a pattern string and the original chat line, and returns the
     pattern with all tokens replaced.</p>
 
@@ -303,7 +303,7 @@ if (result.find("N3") != std::string::npos)
 
     <h3>Step 1: Open MyChatCommand()</h3>
 
-    <p>In <strong>MQMyChat.cpp</strong>, find <code>MyChatCommand()</code> (line 100).
+    <p>In <strong>MQMyChat.cpp</strong>, find <code>MyChatCommand()</code> (line 101).
     All subcommands are handled by sequential <code>if (ci_equals(...))</code> blocks.</p>
 
     <h3>Step 2: Add Your Block</h3>
@@ -598,6 +598,30 @@ print("Window locked:", locked)</code></pre>
 
     <p>Before you start modifying MQMyChat, be aware of these gotchas that can cause
     subtle bugs or crashes:</p>
+
+    <h3>Always Use AppendToConsole</h3>
+
+    <div class="warning">
+        <strong>Never</strong> call <code>console-&gt;AppendText()</code> directly when
+        writing chat output. Always use <code>engine.AppendToConsole(console, text,
+        color)</code> instead. This method is the single chokepoint for all console output
+        in the plugin. It handles
+        <a href="chat-routing.html#timestamps">timestamp injection</a> (stripping existing
+        <code>[HH:MM:SS]</code> timestamps and optionally prepending a colored timestamp
+        via multiple <code>AppendText</code> calls with explicit <code>MQColor</code>
+        values per segment). This multi-segment approach is critical: an earlier
+        implementation used a single string with MQ color codes
+        (<code>\ay[\aw...\ay]\ax</code>), but the <code>\ax</code> reset code overrode
+        the <code>defaultColor</code> parameter passed to <code>AppendText</code>,
+        causing all message text to render white instead of the filter-assigned color.
+        The current approach gives each piece (brackets, time digits, message text) an
+        explicit color and preserves the original message color. If you bypass
+        <code>AppendToConsole()</code>, your output will not have timestamps even when
+        the user has them enabled, and the behavior will be inconsistent with every
+        other output path. Every call site in the plugin &mdash;
+        <code>RouteToChannel</code>, <code>SendToChannel</code>, spam channel output,
+        and local echo &mdash; goes through <code>AppendToConsole()</code>.
+    </div>
 
     <h3>WriteChatf Reentrancy</h3>
 

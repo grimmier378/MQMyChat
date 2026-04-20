@@ -133,7 +133,12 @@
                 <td><strong>Options menu</strong></td>
                 <td>
                     <ul>
-                        <li>Timestamps toggle</li>
+                        <li>Timestamps toggle &mdash; when enabled, every line written to
+                        any console gets a colored <code>[HH:MM:SS]</code> timestamp
+                        prepended. Existing timestamps from EQ are stripped first to
+                        prevent doubling. See
+                        <a href="chat-routing.html#timestamps">AppendToConsole and
+                        Timestamps</a>.</li>
                         <li>Links toggle</li>
                         <li>Local Echo toggle</li>
                         <li>Auto Scroll toggle</li>
@@ -241,12 +246,27 @@
 
     <p>When a chat line is routed to a channel (see
     <a href="chat-routing.html">Chat Routing</a>), it is added to that channel's console
-    via:</p>
+    via the engine's <code>AppendToConsole()</code> method:</p>
 
-    <pre><code>console->AppendText(text, color, newline);</code></pre>
+    <pre><code>engine.AppendToConsole(console, text, color);</code></pre>
 
-    <p>The <code>color</code> parameter controls the text color for that line. The
-    <code>newline</code> parameter determines whether a line break is added after the text.</p>
+    <p>This is the <strong>only</strong> way text is written to any console in the plugin.
+    No code calls <code>console-&gt;AppendText()</code> directly anymore. The
+    <code>AppendToConsole()</code> method handles
+    <a href="chat-routing.html#timestamps">timestamp injection</a>: when the Timestamps
+    option is enabled, it strips any existing <code>[HH:MM:SS]</code> timestamp from the
+    incoming text, then uses multiple <code>AppendText</code> calls with explicit
+    <code>MQColor</code> values per segment &mdash; yellow for the brackets, white for
+    the time digits, and the original filter-assigned color for the message text. This
+    multi-segment approach ensures the message color is preserved (an earlier
+    single-string approach using MQ color codes like <code>\ax</code> would override the
+    <code>defaultColor</code> parameter, causing all text to render white). When
+    timestamps are disabled, it simply forwards the text to
+    <code>console-&gt;AppendText()</code> unchanged.</p>
+
+    <p>The <code>color</code> parameter controls the text color for that line. An optional
+    fourth parameter <code>appendNewLine</code> (defaults to <code>true</code>) determines
+    whether a line break is added after the text.</p>
 
     <h3>Font Size</h3>
 
@@ -263,7 +283,7 @@
 
     <h2>DrawConsole and DrawMainConsole</h2>
 
-    <p><code>DrawConsole()</code> (line 632) and <code>DrawMainConsole()</code> (line 735)
+    <p><code>DrawConsole()</code> (line 660) and <code>DrawMainConsole()</code> (line 763)
     handle the layout of each channel's display area.</p>
 
     <h3>Layout</h3>
@@ -300,7 +320,9 @@
         re-enter a command that already exists in the history, the old duplicate is removed
         and the command is added fresh at the end, so your history stays clean.</li>
         <li><strong>Local echo:</strong> When enabled, your typed text appears in the channel
-        as <code>&gt; text</code> in gray, so you can see what you sent.</li>
+        as <code>&gt; text</code> in gray, so you can see what you sent. The echo is written
+        through <code>engine.AppendToConsole()</code>, so it also receives a timestamp when
+        the Timestamps option is enabled.</li>
         <li><strong>Auto-focus:</strong> After pressing Enter to send a command, the cursor
         automatically returns to the input field so you can keep typing.</li>
     </ul>

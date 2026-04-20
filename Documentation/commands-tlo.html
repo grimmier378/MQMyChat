@@ -41,7 +41,7 @@
     <h2>The /mychat Command</h2>
 
     <p>The command is registered during plugin startup inside <code>InitializePlugin()</code>
-    (MQMyChat.cpp, starting at line 25):</p>
+    (MQMyChat.cpp, starting at line 26):</p>
 
 <pre><code>PLUGIN_API void InitializePlugin()
 {
@@ -60,7 +60,7 @@
 
     <h3>How Argument Parsing Works</h3>
 
-    <p>Inside <code>MyChatCommand()</code> (line 100), the plugin uses two MacroQuest
+    <p>Inside <code>MyChatCommand()</code> (line 101), the plugin uses two MacroQuest
     helpers to pull arguments out of the string:</p>
 
     <ul>
@@ -444,8 +444,59 @@ sendToChannel("Tells", "Reminder: rebuff in 5 minutes")</code></pre>
         callbacks: <code>OnIncomingChat</code> (for chat arriving from the EQ server) and
         <code>OnWriteChatColor</code> (for text written to the MQ console by plugins).
         Both feed incoming lines into the Blech pattern engine, which routes them to the
-        appropriate channel. The <code>Send</code> method bypasses this routing entirely
-        and writes directly to a channel's console.
+        appropriate channel. The <code>Send</code> method bypasses Blech routing entirely
+        and writes to the channel's console through <code>AppendToConsole()</code>. This
+        means sent messages also receive timestamps when the Timestamps option is enabled.
+        If the target channel has <code>mainEnable = true</code>, the message also appears
+        in the Main tab.
+    </div>
+
+    <h3>How SendToChannel Works Internally</h3>
+
+    <p>Both the <code>Send</code> TLO method and the <code>/mychat send</code> command
+    ultimately call <code>MyChatEngine::SendToChannel()</code>. This method:</p>
+
+    <ol>
+        <li>Searches through all loaded channels for a case-insensitive name match.</li>
+        <li>If found, calls <code>AppendToConsole()</code> on the channel's console widget
+            (and on the main console if <code>mainEnable</code> is true). The message
+            goes through the same timestamp-injection logic as all other output.</li>
+        <li>If the channel name is <strong>not</strong> found, the method
+            <strong>creates a new channel</strong> with that name on-the-fly, then appends
+            the message to it. This is how external plugins like MQMyDPS can send data to
+            MQMyChat without any prior configuration &mdash; the channel appears
+            automatically the first time a message is sent to it.</li>
+    </ol>
+
+<pre><code>void MyChatEngine::SendToChannel(
+    const std::string&amp; channelName, const std::string&amp; message)
+{
+    for (auto&amp; [id, ch] : settings.channels)
+    {
+        if (ci_equals(ch.name, channelName))
+        {
+            if (ch.console)
+                AppendToConsole(ch.console, message,
+                    MQColor(240, 240, 240));
+            if (ch.mainEnable &amp;&amp; mainConsole)
+                AppendToConsole(mainConsole, message,
+                    MQColor(240, 240, 240));
+            return;
+        }
+    }
+
+    int newId = GetNextChannelId();
+    CreateChannel(channelName, newId);
+    // ... append to the newly created channel ...
+}</code></pre>
+
+    <div class="note">
+        <strong>Use case: MQMyDPS integration.</strong> The MQMyDPS plugin (a C++ damage
+        parser) can send formatted DPS reports to MQMyChat by evaluating
+        <code>${MyChat.Send[DPS,formatted report text]}</code>. The first time this is
+        called, MQMyChat automatically creates a "DPS" channel tab. Subsequent messages
+        append to that existing channel. The user can then configure the channel
+        (enable/disable, pop out, change font size) just like any other channel.
     </div>
 
     <h3>Macro (MQ2) Syntax</h3>

@@ -59,11 +59,16 @@
     </ul>
 
     <p>The engine does not render anything directly. It processes chat, manages state, and hands
-    data to the renderer. The renderer header only forward-declares <code>MyChatEngine</code>
-    &mdash; it does not include channel data structures directly. The renderer's .cpp file
-    includes <code>MQMyChat.h</code> and <code>MyChatDatabase.h</code> to access the full
-    types, but the separation at the header level keeps dependencies clean. The renderer does
-    not know about Blech &mdash; it just reads the channel data and draws it.</p>
+    data to the renderer. All text output &mdash; from Blech-routed lines, the spam channel,
+    the <code>SendToChannel()</code> API, and local echo in the renderer &mdash; passes
+    through a single method: <code>AppendToConsole()</code>. This method handles timestamp
+    injection (stripping duplicate timestamps and optionally prepending colored ones) before
+    writing to the underlying <code>ConsoleWidget</code>. The renderer header only
+    forward-declares <code>MyChatEngine</code> &mdash; it does not include channel data
+    structures directly. The renderer's .cpp file includes <code>MQMyChat.h</code> and
+    <code>MyChatDatabase.h</code> to access the full types, but the separation at the header
+    level keeps dependencies clean. The renderer does not know about Blech &mdash; it just
+    reads the channel data and draws it.</p>
 
     <h2>Data Flow</h2>
 
@@ -107,8 +112,12 @@
        |
        v
  +------------------------------+
- | ConsoleWidget::AppendText()  |     The matched, colored line is appended
- |                              |     to the channel's console widget.
+ | AppendToConsole()            |     Central output method. Strips any
+ |                              |     existing [HH:MM:SS] timestamps,
+ |                              |     optionally prepends a colored
+ |                              |     timestamp via multiple AppendText()
+ |                              |     calls with explicit MQColor values,
+ |                              |     preserving the filter-assigned color.
  +------------------------------+
        |
        v
@@ -141,8 +150,15 @@
         <code>OnWriteChatColor</code>. These intercept chat from EQ.</li>
         <li><strong>Blech setup:</strong> Registering patterns with the Blech matcher and
         defining the callback that fires on matches.</li>
-        <li><strong>Token substitution:</strong> Replacing tokens like <code>${Me}</code> in
-        patterns before they are registered with Blech.</li>
+        <li><strong>Console output:</strong> The <code>AppendToConsole()</code> method,
+        which is the single chokepoint for all text written to any ConsoleWidget. It
+        handles timestamp injection (stripping duplicate timestamps and optionally
+        prepending colored ones via multiple <code>AppendText</code> calls with
+        explicit <code>MQColor</code> values per segment, preserving the
+        filter-assigned message color) before forwarding to the widget. See
+        <a href="chat-routing.html#timestamps">AppendToConsole and Timestamps</a>.</li>
+        <li><strong>Token substitution:</strong> Replacing tokens like <code>M3</code> in
+        filter patterns with live game values before matching.</li>
         <li><strong>Command handling:</strong> Processing <code>/mychat</code> slash commands.</li>
     </ul>
 
@@ -332,9 +348,13 @@
     <p>The top-level container for all plugin state. It holds:</p>
     <ul>
         <li>A <code>std::map</code> of channel ID to <code>ChatChannel</code></li>
-        <li>Global settings: theme index, timestamp toggle, global scale, default echo
-        command, default font size, link detection, auto-scroll, local echo, and a
-        configurable hotkey for focusing the chat input</li>
+        <li>Global settings: theme index, <strong>timestamp toggle</strong>
+        (<code>timeStamps</code>, defaults to <code>true</code> &mdash; controls whether
+        <code>AppendToConsole()</code> prepends colored timestamps via multiple
+        <code>AppendText</code> calls with explicit <code>MQColor</code> values per
+        segment to every line), global
+        scale, default echo command, default font size, link detection, auto-scroll, local
+        echo, and a configurable hotkey for focusing the chat input</li>
         <li>A window lock flag that prevents all windows from being moved or resized</li>
     </ul>
 

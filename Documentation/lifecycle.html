@@ -75,7 +75,7 @@
     chance to react.
 </p>
 
-<h3>InitializePlugin (line 25)</h3>
+<h3>InitializePlugin (line 26)</h3>
 
 <p>
     Called once when the plugin DLL is first loaded (typically at MQ startup or when you type
@@ -103,7 +103,7 @@
         the plugin.</li>
 </ol>
 
-<h3>ShutdownPlugin (line 33)</h3>
+<h3>ShutdownPlugin (line 34)</h3>
 
 <p>
     Called once when the plugin is unloaded. Mirrors <code>InitializePlugin</code> in reverse
@@ -125,7 +125,7 @@
     <code>nullptr</code>, so every other callback checks for that before doing work.
 </p>
 
-<h3>SetGameState (line 42)</h3>
+<h3>SetGameState (line 43)</h3>
 
 <p>
     MacroQuest calls this whenever EverQuest transitions between game states (character select,
@@ -152,7 +152,7 @@
         the next character starts fresh.</li>
 </ul>
 
-<h3>OnIncomingChat (line 53)</h3>
+<h3>OnIncomingChat (line 54)</h3>
 
 <p>
     Fires for every line of chat that EverQuest itself generates (tells, say, group chat,
@@ -174,7 +174,7 @@
     them into its own consoles.
 </p>
 
-<h3>OnWriteChatColor (line 60)</h3>
+<h3>OnWriteChatColor (line 61)</h3>
 
 <p>
     Fires for every line written by MacroQuest or another plugin (via <code>WriteChatf</code>,
@@ -188,7 +188,7 @@
         g_chatEngine->ProcessWriteChat(Line, Color);
 }</code></pre>
 
-<h3>OnUpdateImGui (line 66)</h3>
+<h3>OnUpdateImGui (line 67)</h3>
 
 <p>
     Called every frame by the ImGui render loop. This is where all drawing happens. If the
@@ -229,7 +229,7 @@
     <a href="rendering.html">ImGui Rendering</a> page.
 </p>
 
-<h3>OnPulse (line 81)</h3>
+<h3>OnPulse (line 82)</h3>
 
 <p>
     Called roughly every frame. The plugin throttles its work to once every 500 ms using a
@@ -278,7 +278,7 @@
     Understanding them is key to understanding the plugin's startup and teardown sequence.
 </p>
 
-<h3>Initialize() (line 227)</h3>
+<h3>Initialize() (line 228)</h3>
 
 <p>
     One-time setup. Called from <code>InitializePlugin</code>. Here is the full method:
@@ -332,7 +332,7 @@
         <a href="chat-routing.html#pattern-matching">Pattern Matching</a>).</li>
 </ol>
 
-<h3>Shutdown() (line 253)</h3>
+<h3>Shutdown() (line 254)</h3>
 
 <pre><code>void MyChatEngine::Shutdown()
 {
@@ -357,7 +357,7 @@
 
 <p>Clean teardown in order: Blech events, save, consoles, Lua, database.</p>
 
-<h3>LoadCharacterSettings() (line 274)</h3>
+<h3>LoadCharacterSettings() (line 275)</h3>
 
 <p>
     Called when a character enters the game world. This is where per-character customization
@@ -369,8 +369,16 @@
     if (!pLocalPlayer)
         return;
 
-    charName = pLocalPlayer-&gt;Name;
-    serverName = GetServerShortName();
+    std::string newChar = pLocalPlayer-&gt;Name;
+    std::string newServer = GetServerShortName();
+
+    if (!charName.empty() && charName == newChar
+        && serverName == newServer
+        && !settings.channels.empty())
+        return;
+
+    charName = newChar;
+    serverName = newServer;
 
     activePresetId = database-&gt;GetOrCreatePreset(serverName, charName);
     database-&gt;LoadSettings(activePresetId, settings);
@@ -407,6 +415,16 @@
 <p>The sequence:</p>
 <ol>
     <li>Grab the character name and server short name from the game.</li>
+    <li><strong>Early-return guard (zone bug fix):</strong> If the same character and server
+        are already loaded and channels are not empty, skip the rest. This prevents
+        <code>channels.clear()</code> from destroying console widgets during zone
+        transitions. Without this guard, every zone change would call
+        <code>SetGameState(GAMESTATE_INGAME)</code>, which calls
+        <code>LoadCharacterSettings()</code>, which would call
+        <code>LoadSettings()</code> &mdash; and <code>LoadSettings()</code> starts with
+        <code>outSettings.channels.clear()</code>. That destroys all
+        <code>ConsoleWidget</code> instances, wiping the chat history visible in every
+        tab.</li>
     <li>Look up (or create) the active preset in the database.</li>
     <li>Load channel/event/filter settings from the preset.</li>
     <li>Load global settings (settings shared across presets).</li>
@@ -421,7 +439,7 @@
     <li>Fetch the preset list and find the active preset name for display.</li>
 </ol>
 
-<h3>SaveCharacterSettings() (line 313)</h3>
+<h3>SaveCharacterSettings() (line 320)</h3>
 
 <pre><code>void MyChatEngine::SaveCharacterSettings()
 {
@@ -439,7 +457,7 @@
     writes it back into the <code>settings</code> struct, so what you see is what gets saved.
 </p>
 
-<h3>UnloadCharacterSettings() (line 324)</h3>
+<h3>UnloadCharacterSettings() (line 331)</h3>
 
 <pre><code>void MyChatEngine::UnloadCharacterSettings()
 {
@@ -568,7 +586,7 @@ void MyChatEngine::SaveWindowVisibility()
     MQMyChat registers one Blech event per enabled event string in each enabled channel.
 </p>
 
-<h3>RegisterBlechEvents() (line 372)</h3>
+<h3>RegisterBlechEvents() (line 379)</h3>
 
 <pre><code>void MyChatEngine::RegisterBlechEvents()
 {
@@ -612,7 +630,7 @@ void MyChatEngine::SaveWindowVisibility()
         and in <code>evt.blechId</code> for reference.</li>
 </ul>
 
-<h3>UnregisterBlechEvents() (line 399)</h3>
+<h3>UnregisterBlechEvents() (line 406)</h3>
 
 <pre><code>void MyChatEngine::UnregisterBlechEvents()
 {
@@ -661,6 +679,7 @@ InitializePlugin()
 SetGameState(GAMESTATE_INGAME)
   |-- LoadCharacterSettings()
   |     |-- Get char/server name
+  |     |-- Early-return if same char/server/channels already loaded (zone fix)
   |     |-- Load preset from DB
   |     |-- Load settings, global settings
   |     |-- Load window visibility (INI)

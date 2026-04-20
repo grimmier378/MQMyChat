@@ -91,18 +91,20 @@
         <tbody>
             <tr>
                 <td><code>MQMyChat.cpp</code></td>
-                <td>1014</td>
+                <td>1056</td>
                 <td>Plugin entry point. Contains <code>MyChatEngine</code> implementation:
-                chat routing, Blech event setup, token substitution, command handling, and
-                the hooks into MQ's <code>OnIncomingChat</code> /
+                chat routing, Blech event setup, token substitution, command handling,
+                the <code>AppendToConsole()</code> method (which handles timestamp
+                injection), and the hooks into MQ's <code>OnIncomingChat</code> /
                 <code>OnWriteChatColor</code> callbacks.</td>
             </tr>
             <tr>
                 <td><code>MQMyChat.h</code></td>
-                <td>102</td>
+                <td>105</td>
                 <td><code>MyChatEngine</code> class declaration. Defines the central engine
                 that ties together the database, renderer, Blech matcher, Lua state, and
-                all channel data.</td>
+                all channel data. Declares the <code>AppendToConsole()</code> method that
+                all console output routes through.</td>
             </tr>
             <tr>
                 <td><code>MyChatChannel.h</code></td>
