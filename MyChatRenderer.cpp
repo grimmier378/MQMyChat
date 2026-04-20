@@ -719,7 +719,7 @@ void MyChatRenderer::DrawConsole(MyChatEngine& engine, int channelId)
         if (s[0])
         {
             if (engine.settings.localEcho && ch.console)
-                ch.console->AppendText(fmt::format("> {}", s), MQColor(128, 128, 128), true);
+                engine.AppendToConsole(ch.console, fmt::format("> {}", s), MQColor(128, 128, 128));
 
             for (int i = static_cast<int>(ch.commandHistory.size()) - 1; i >= 0; --i)
             {
@@ -842,7 +842,7 @@ void MyChatRenderer::DrawMainConsole(MyChatEngine& engine)
         if (s[0])
         {
             if (engine.settings.localEcho && engine.mainConsole)
-                engine.mainConsole->AppendText(fmt::format("> {}", s), MQColor(128, 128, 128), true);
+                engine.AppendToConsole(engine.mainConsole, fmt::format("> {}", s), MQColor(128, 128, 128));
 
             for (int i = static_cast<int>(mainHistory.size()) - 1; i >= 0; --i)
             {

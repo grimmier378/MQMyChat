@@ -40,6 +40,9 @@ public:
     void CreateChannel(const std::string& name, int channelId = -1);
     int  GetNextChannelId() const;
 
+    void AppendToConsole(const std::shared_ptr<mq::imgui::ConsoleWidget>& console,
+        std::string_view text, MQColor color, bool appendNewLine = true);
+
     void RegisterBlechEvents();
     void UnregisterBlechEvents();
 

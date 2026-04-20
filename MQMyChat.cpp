@@ -7,6 +7,7 @@
 #include <zep/display.h>
 #include <filesystem>
 #include <fmt/format.h>
+#include <ctime>
 
 extern "C" {
 #include <luajit/lua.h>
@@ -276,8 +277,14 @@ void MyChatEngine::LoadCharacterSettings()
 	if (!pLocalPlayer)
 		return;
 
-	charName = pLocalPlayer->Name;
-	serverName = GetServerShortName();
+	std::string newChar = pLocalPlayer->Name;
+	std::string newServer = GetServerShortName();
+
+	if (!charName.empty() && charName == newChar && serverName == newServer && !settings.channels.empty())
+		return;
+
+	charName = newChar;
+	serverName = newServer;
 
 	activePresetId = database->GetOrCreatePreset(serverName, charName);
 	database->LoadSettings(activePresetId, settings);
@@ -443,9 +450,9 @@ void MyChatEngine::ProcessIncomingChat(const char* line, int color)
 			auto spamIt = settings.channels.find(CHANNEL_SPAM);
 			if (spamIt != settings.channels.end() && spamIt->second.console)
 			{
-				spamIt->second.console->AppendText(line, MQColor(240, 240, 240), true);
+				AppendToConsole(spamIt->second.console, line, MQColor(240, 240, 240));
 				if (spamIt->second.mainEnable && mainConsole)
-					mainConsole->AppendText(line, MQColor(240, 240, 240), true);
+					AppendToConsole(mainConsole, line, MQColor(240, 240, 240));
 			}
 		}
 	}
@@ -532,10 +539,10 @@ void MyChatEngine::RouteToChannel(int channelId, int eventIndex, const char* lin
 	}
 
 	if (channel.console)
-		channel.console->AppendText(line, outputColor, true);
+		AppendToConsole(channel.console, line, outputColor);
 
 	if (channel.mainEnable && mainConsole)
-		mainConsole->AppendText(line, outputColor, true);
+		AppendToConsole(mainConsole, line, outputColor);
 
 	std::string lineStr(line);
 	m_claimedLines[lineStr] = ClaimedLine{
@@ -616,10 +623,10 @@ void MyChatEngine::SendToChannel(const std::string& channelName, const std::stri
 		if (ci_equals(ch.name, channelName))
 		{
 			if (ch.console)
-				ch.console->AppendText(message, MQColor(240, 240, 240), true);
+				AppendToConsole(ch.console, message, MQColor(240, 240, 240));
 
 			if (ch.mainEnable && mainConsole)
-				mainConsole->AppendText(message, MQColor(240, 240, 240), true);
+				AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
 			return;
 		}
 	}
@@ -631,10 +638,10 @@ void MyChatEngine::SendToChannel(const std::string& channelName, const std::stri
 	if (it != settings.channels.end())
 	{
 		if (it->second.console)
-			it->second.console->AppendText(message, MQColor(240, 240, 240), true);
+			AppendToConsole(it->second.console, message, MQColor(240, 240, 240));
 
 		if (it->second.mainEnable && mainConsole)
-			mainConsole->AppendText(message, MQColor(240, 240, 240), true);
+			AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
 	}
 }
 
@@ -649,6 +656,41 @@ void MyChatEngine::CreateChannel(const std::string& name, int channelId)
 	ch.console = mq::imgui::ConsoleWidget::Create(fmt::format("MQMyChat##Channel_{}", channelId).c_str());
 	settings.channels[channelId] = std::move(ch);
 	SortChannels();
+}
+
+void MyChatEngine::AppendToConsole(const std::shared_ptr<mq::imgui::ConsoleWidget>& console,
+	std::string_view text, MQColor color, bool appendNewLine)
+{
+	if (!console)
+		return;
+
+	if (settings.timeStamps)
+	{
+		std::string cleaned(text);
+		auto bracket = cleaned.find('[');
+		if (bracket != std::string::npos && bracket + 9 < cleaned.size()
+			&& cleaned[bracket + 3] == ':' && cleaned[bracket + 6] == ':'
+			&& cleaned[bracket + 9] == ']')
+		{
+			size_t end = bracket + 10;
+			if (end < cleaned.size() && cleaned[end] == ' ')
+				end++;
+			cleaned.erase(bracket, end - bracket);
+		}
+
+		time_t now = time(nullptr);
+		struct tm local;
+		localtime_s(&local, &now);
+		char timeBuf[16];
+		strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &local);
+
+		std::string stamped = fmt::format("\ay[\aw{}\ay]\ax {}", timeBuf, cleaned);
+		console->AppendText(stamped, color, appendNewLine);
+	}
+	else
+	{
+		console->AppendText(text, color, appendNewLine);
+	}
 }
 
 int MyChatEngine::GetNextChannelId() const
