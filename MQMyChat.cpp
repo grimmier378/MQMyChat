@@ -412,6 +412,12 @@ void MyChatEngine::UnregisterBlechEvents()
 	m_blechEventMap.clear();
 }
 
+void MyChatEngine::RefreshBlechEvents()
+{
+	UnregisterBlechEvents();
+	RegisterBlechEvents();
+}
+
 void CALLBACK MyChatEngine::BlechCallback(unsigned int id, void* pData, PBLECHVALUE pValues)
 {
 	if (!g_chatEngine)
@@ -451,8 +457,6 @@ void MyChatEngine::ProcessIncomingChat(const char* line, int color)
 			if (spamIt != settings.channels.end() && spamIt->second.console)
 			{
 				AppendToConsole(spamIt->second.console, line, MQColor(240, 240, 240));
-				if (spamIt->second.mainEnable && mainConsole)
-					AppendToConsole(mainConsole, line, MQColor(240, 240, 240));
 			}
 		}
 	}
@@ -684,8 +688,12 @@ void MyChatEngine::AppendToConsole(const std::shared_ptr<mq::imgui::ConsoleWidge
 		char timeBuf[16];
 		strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &local);
 
-		std::string stamped = fmt::format("\ay[\aw{}\ay]\ax {}", timeBuf, cleaned);
-		console->AppendText(stamped, color, appendNewLine);
+		MQColor yellow(255, 255, 0);
+		MQColor white(255, 255, 255);
+		console->AppendText("[", yellow, false);
+		console->AppendText(timeBuf, white, false);
+		console->AppendText("] ", yellow, false);
+		console->AppendText(cleaned, color, appendNewLine);
 	}
 	else
 	{

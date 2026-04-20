@@ -45,6 +45,7 @@ public:
 
     void RegisterBlechEvents();
     void UnregisterBlechEvents();
+    void RefreshBlechEvents();
 
     void SortChannels();
     void PopulateDefaultChannels();

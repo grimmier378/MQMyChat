@@ -146,7 +146,10 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
         {
             for (auto& [id, ch] : engine.settings.channels)
             {
-                ImGui::Checkbox(ch.name.c_str(), &ch.enabled);
+                if (id == CHANNEL_SPAM)
+                    continue;
+                if (ImGui::Checkbox(ch.name.c_str(), &ch.enabled))
+                    engine.RefreshBlechEvents();
             }
             ImGui::EndMenu();
         }
@@ -331,7 +334,8 @@ void MyChatRenderer::RenderConfigGUI(MyChatEngine& engine)
                 ImGui::PushID(id);
 
                 ImGui::TableNextColumn();
-                ImGui::Checkbox("##enabled", &ch.enabled);
+                if (ImGui::Checkbox("##enabled", &ch.enabled))
+                    engine.RefreshBlechEvents();
 
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(ch.name.c_str());
@@ -485,7 +489,8 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     evt.filters.insert(evt.filters.begin(), defaultFilter);
                 }
 
-                ImGui::Checkbox("Enabled##evt", &evt.enabled);
+                if (ImGui::Checkbox("Enabled##evt", &evt.enabled))
+                    engine.RefreshBlechEvents();
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Remove Event"))
                     eventToRemove = ei;
