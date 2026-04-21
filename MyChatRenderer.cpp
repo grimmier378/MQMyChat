@@ -101,10 +101,21 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
             ImGui::Checkbox("Log Commands", &engine.settings.logCommands);
             if (ImGui::Checkbox("Spam Channel", &engine.enableSpam))
             {
-                if (engine.enableSpam && engine.settings.channels.find(CHANNEL_SPAM) == engine.settings.channels.end())
+                if (engine.enableSpam)
                 {
-                    engine.CreateChannel("Spam", CHANNEL_SPAM);
+                    auto spamIt = engine.settings.channels.find(CHANNEL_SPAM);
+                    if (spamIt == engine.settings.channels.end())
+                        engine.CreateChannel("Spam", CHANNEL_SPAM);
+                    else
+                        spamIt->second.enabled = true;
                 }
+                else
+                {
+                    auto spamIt = engine.settings.channels.find(CHANNEL_SPAM);
+                    if (spamIt != engine.settings.channels.end())
+                        spamIt->second.enabled = false;
+                }
+                engine.SortChannels();
             }
             ImGui::Separator();
             ImGui::Checkbox("Key Focus", &engine.settings.keyFocus);

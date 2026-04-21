@@ -300,6 +300,11 @@ void MyChatEngine::LoadCharacterSettings()
 			ch.console = mq::imgui::ConsoleWidget::Create(fmt::format("MQMyChat##Channel_{}", id).c_str());
 	}
 
+	auto spamIt = settings.channels.find(CHANNEL_SPAM);
+	if (spamIt != settings.channels.end())
+		spamIt->second.enabled = false;
+	enableSpam = false;
+
 	RegisterBlechEvents();
 	SortChannels();
 	ApplyFontSizes();
@@ -622,6 +627,13 @@ void MyChatEngine::SyncFontSizes()
 
 void MyChatEngine::SendToChannel(const std::string& channelName, const std::string& message)
 {
+	if (ci_equals(channelName, "main"))
+	{
+		if (mainConsole)
+			AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
+		return;
+	}
+
 	for (auto& [id, ch] : settings.channels)
 	{
 		if (ci_equals(ch.name, channelName))
