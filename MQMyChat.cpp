@@ -525,6 +525,11 @@ void MyChatEngine::RouteToChannel(int channelId, int eventIndex, const char* lin
 		break;
 	}
 
+	std::string lineStr(line);
+	m_claimedLines[lineStr] = ClaimedLine{
+		std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(CLAIMED_TTL * 1000))
+	};
+
 	if (filtered)
 		return;
 
@@ -552,11 +557,6 @@ void MyChatEngine::RouteToChannel(int channelId, int eventIndex, const char* lin
 
 	if (channel.mainEnable && mainConsole)
 		AppendToConsole(mainConsole, line, outputColor);
-
-	std::string lineStr(line);
-	m_claimedLines[lineStr] = ClaimedLine{
-		std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(CLAIMED_TTL * 1000))
-	};
 }
 
 void MyChatEngine::SortChannels()
