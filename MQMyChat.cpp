@@ -245,6 +245,7 @@ void MyChatEngine::Initialize()
 	database->Open(dbPath);
 	database->InitSchema();
 	mainConsole = mq::imgui::ConsoleWidget::Create("MQMyChat##MainConsole");
+	mainConsole->SetMaxBufferLines(settings.maxBufferLines);
 	m_blech = std::make_unique<Blech>('#', '|', BlechVarCallback);
 	m_luaState = luaL_newstate();
 	if (m_luaState)
@@ -308,6 +309,7 @@ void MyChatEngine::LoadCharacterSettings()
 	RegisterBlechEvents();
 	SortChannels();
 	ApplyFontSizes();
+	ApplyBufferSize();
 	SaveCharacterSettings();
 	database->GetPresetList(serverName, presetList);
 
@@ -607,6 +609,18 @@ void MyChatEngine::ApplyFontSizes()
 	}
 }
 
+void MyChatEngine::ApplyBufferSize()
+{
+	if (mainConsole)
+		mainConsole->SetMaxBufferLines(settings.maxBufferLines);
+
+	for (auto& [id, ch] : settings.channels)
+	{
+		if (ch.console)
+			ch.console->SetMaxBufferLines(settings.maxBufferLines);
+	}
+}
+
 static int GetConsoleFontSize(const std::shared_ptr<mq::imgui::ConsoleWidget>& console)
 {
 	if (!console)
@@ -670,6 +684,7 @@ void MyChatEngine::CreateChannel(const std::string& name, int channelId)
 	ch.channelId = channelId;
 	ch.name = name;
 	ch.console = mq::imgui::ConsoleWidget::Create(fmt::format("MQMyChat##Channel_{}", channelId).c_str());
+	ch.console->SetMaxBufferLines(settings.maxBufferLines);
 	settings.channels[channelId] = std::move(ch);
 	SortChannels();
 }

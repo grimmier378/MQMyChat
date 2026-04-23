@@ -145,6 +145,15 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
                 engine.ApplyFontSizes();
             }
             ImGui::Separator();
+            ImGui::Text("Max Buffer Lines:");
+            ImGui::SetNextItemWidth(100);
+            if (ImGui::InputInt("##MaxBufferLines", &engine.settings.maxBufferLines))
+            {
+                if (engine.settings.maxBufferLines < 500) engine.settings.maxBufferLines = 500;
+                if (engine.settings.maxBufferLines > 50000) engine.settings.maxBufferLines = 50000;
+                engine.ApplyBufferSize();
+            }
+            ImGui::Separator();
             ImGui::Text("Theme:");
             engine.settings.themeIdx = ImGuiTheme::DrawThemePicker(engine.settings.themeIdx, "MyChatTheme");
             ImGui::Separator();

@@ -532,6 +532,8 @@ void MyChatDatabase::LoadGlobalSettings(const std::string& server, const std::st
             outSettings.localEcho = (value == "1" || value == "true");
         else if (key == "autoScroll")
             outSettings.autoScroll = (value == "1" || value == "true");
+        else if (key == "maxBufferLines")
+            outSettings.maxBufferLines = std::stoi(value);
     }
 
     sqlite3_finalize(stmt);
@@ -567,6 +569,7 @@ void MyChatDatabase::SaveGlobalSettings(const std::string& server, const std::st
     saveKV("keyName", settings.keyName);
     saveKV("localEcho", settings.localEcho ? "1" : "0");
     saveKV("autoScroll", settings.autoScroll ? "1" : "0");
+    saveKV("maxBufferLines", fmt::format("{}", settings.maxBufferLines));
 
     ExecSQL("COMMIT");
 }

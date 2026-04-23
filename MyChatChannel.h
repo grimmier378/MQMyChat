@@ -4,6 +4,8 @@
 
 namespace mq::imgui { class ConsoleWidget; }
 
+static constexpr int DEFAULT_MAX_BUFFER_LINES = 5000;
+
 struct ChatFilter {
     int         filterIndex = 0;
     std::string filterString;
@@ -61,6 +63,7 @@ struct MyChatSettings {
     std::string keyName = "RightShift";
     bool        localEcho = true;
     bool        autoScroll = true;
+    int         maxBufferLines = DEFAULT_MAX_BUFFER_LINES;
 
     std::map<int, ChatChannel> channels;
 };

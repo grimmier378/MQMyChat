@@ -50,6 +50,7 @@ public:
     void SortChannels();
     void PopulateDefaultChannels();
     void ApplyFontSizes();
+    void ApplyBufferSize();
     void SyncFontSizes();
 
     void CleanExpiredClaims();
