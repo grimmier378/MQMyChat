@@ -77,6 +77,9 @@ PLUGIN_API void OnUpdateImGui()
 
 	if (g_chatEngine->showEditGUI)
 		s_renderer.RenderEditChannelGUI(*g_chatEngine);
+
+	if (g_chatEngine->showPresetManager)
+		s_renderer.RenderPresetManager(*g_chatEngine);
 }
 
 PLUGIN_API void OnPulse()
@@ -290,6 +293,7 @@ void MyChatEngine::LoadCharacterSettings()
 	activePresetId = database->GetOrCreatePreset(serverName, charName);
 	database->LoadSettings(activePresetId, settings);
 	database->LoadGlobalSettings(serverName, charName, settings);
+	database->LoadCharChannelOverrides(serverName, charName, activePresetId, settings);
 	LoadWindowVisibility();
 
 	if (settings.channels.empty())
@@ -330,7 +334,7 @@ void MyChatEngine::SaveCharacterSettings()
 		return;
 
 	SyncFontSizes();
-	database->SaveSettings(activePresetId, settings);
+	database->SaveCharChannelOverrides(serverName, charName, activePresetId, settings);
 	database->SaveGlobalSettings(serverName, charName, settings);
 	SaveWindowVisibility();
 }

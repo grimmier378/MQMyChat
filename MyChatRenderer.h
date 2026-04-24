@@ -14,6 +14,7 @@ public:
     void RenderPopOutWindows(MyChatEngine& engine);
     void RenderConfigGUI(MyChatEngine& engine);
     void RenderEditChannelGUI(MyChatEngine& engine);
+    void RenderPresetManager(MyChatEngine& engine);
 
 private:
     void DrawConsole(MyChatEngine& engine, int channelId);
@@ -38,4 +39,11 @@ private:
     char m_tempEventString[1024] = {};
     char m_tempFilterString[1024] = {};
     char m_tempPresetName[256] = {};
+
+    char m_presetCopyName[256] = {};
+    char m_presetNewName[256] = {};
+    char m_presetRenameBuf[256] = {};
+    int  m_renamePresetId = -1;
+    int  m_deletePresetId = -1;
+    bool m_confirmDelete = false;
 };

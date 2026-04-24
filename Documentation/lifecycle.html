@@ -208,12 +208,15 @@
 
     if (g_chatEngine->showEditGUI)
         s_renderer.RenderEditChannelGUI(*g_chatEngine);
+
+    if (g_chatEngine->showPresetManager)
+        s_renderer.RenderPresetManager(*g_chatEngine);
 }</code></pre>
 
 <p>
     Notice that rendering is delegated to a separate <code>MyChatRenderer</code> object
     (<code>s_renderer</code>), not to methods on the engine itself. This keeps rendering
-    logic out of the engine class. The renderer draws up to four things each frame:
+    logic out of the engine class. The renderer draws up to five things each frame:
 </p>
 
 <ol>
@@ -222,6 +225,7 @@
     <li>The config GUI, if the user toggled it on (via <code>/mychat config</code> or a
         button).</li>
     <li>The channel editor GUI, if the user is editing a specific channel.</li>
+    <li>The preset manager window, if the user opened it from the Presets menu.</li>
 </ol>
 
 <p>
@@ -383,6 +387,7 @@
     activePresetId = database-&gt;GetOrCreatePreset(serverName, charName);
     database-&gt;LoadSettings(activePresetId, settings);
     database-&gt;LoadGlobalSettings(serverName, charName, settings);
+    database-&gt;LoadCharChannelOverrides(serverName, charName, activePresetId, settings);
     LoadWindowVisibility();
 
     if (settings.channels.empty())
@@ -428,6 +433,9 @@
     <li>Look up (or create) the active preset in the database.</li>
     <li>Load channel/event/filter settings from the preset.</li>
     <li>Load global settings (settings shared across presets).</li>
+    <li>Load per-character channel display overrides (tab order, enabled state, pop-out, etc.)
+        from the <code>char_channel_overrides</code> table, overlaying them onto the preset's
+        channel defaults.</li>
     <li>Load window visibility from the per-character INI file.</li>
     <li>If no channels exist yet, seed the defaults
         (<code>PopulateDefaultChannels</code>).</li>
@@ -447,7 +455,7 @@
         return;
 
     SyncFontSizes();
-    database-&gt;SaveSettings(activePresetId, settings);
+    database-&gt;SaveCharChannelOverrides(serverName, charName, activePresetId, settings);
     database-&gt;SaveGlobalSettings(serverName, charName, settings);
     SaveWindowVisibility();
 }</code></pre>
@@ -455,6 +463,13 @@
 <p>
     <code>SyncFontSizes()</code> reads the current pixel height from each Zep editor and
     writes it back into the <code>settings</code> struct, so what you see is what gets saved.
+</p>
+
+<p>
+    Note that <code>SaveCharacterSettings()</code> saves per-character display overrides
+    (via <code>SaveCharChannelOverrides</code>), not the full preset structure. Structural
+    changes to events and filters are saved explicitly via <code>SaveSettings()</code> when
+    the user clicks Save in the Edit Channel GUI or Save All in the Config GUI.
 </p>
 
 <h3>UnloadCharacterSettings() (line 331)</h3>
@@ -700,6 +715,7 @@ SetGameState(GAMESTATE_INGAME)
   |     |-- Early-return if same char/server/channels already loaded (zone fix)
   |     |-- Load preset from DB
   |     |-- Load settings, global settings
+  |     |-- Load per-character channel overrides
   |     |-- Load window visibility (INI)
   |     |-- Create channel consoles
   |     |-- RegisterBlechEvents()

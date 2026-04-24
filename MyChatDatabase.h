@@ -24,6 +24,7 @@ public:
     void CopyPreset(int sourceId, const std::string& newName);
     void RenamePreset(int presetId, const std::string& newName);
     void DeletePreset(int presetId);
+    int  CreateBlankPreset(const std::string& server, const std::string& charName, const std::string& name);
 
     void LoadSettings(int presetId, MyChatSettings& outSettings);
     void SaveSettings(int presetId, const MyChatSettings& settings);
@@ -31,14 +32,17 @@ public:
     void LoadGlobalSettings(const std::string& server, const std::string& charName, MyChatSettings& outSettings);
     void SaveGlobalSettings(const std::string& server, const std::string& charName, const MyChatSettings& settings);
 
-    void LoadChannelOverrides(const std::string& server, const std::string& charName, MyChatSettings& outSettings);
-    void SaveChannelOverride(const std::string& server, const std::string& charName, int channelId, int presetId);
+    void LoadCharChannelOverrides(const std::string& server, const std::string& charName, int presetId, MyChatSettings& outSettings);
+    void SaveCharChannelOverrides(const std::string& server, const std::string& charName, int presetId, const MyChatSettings& settings);
 
     void SeedDefaultChannels(int presetId);
 
 private:
     void ExecSQL(const char* sql);
     bool PrepareAndStep(const char* sql, sqlite3_stmt*& stmt);
+    int  GetSchemaVersion();
+    void SetSchemaVersion(int version);
+    void RunMigrations();
 
     sqlite3* m_db = nullptr;
 };

@@ -25,6 +25,8 @@
 <main class="content">
     <h1>Database &amp; Settings</h1>
 
+    <p><em>Last Updated: 2026-04-24</em></p>
+
     <p>MQMyChat stores all of its configuration &mdash; channels, events, filters, presets,
     and per-character settings &mdash; in a single SQLite database file. This page walks you
     through how the database is set up, what the tables look like, and how the plugin reads
@@ -115,7 +117,7 @@ PRAGMA busy_timeout = 3000;</code></pre>
 
     <h2>Schema</h2>
 
-    <p>The database has <strong>7 tables</strong>. They are all created by the
+    <p>The database has <strong>8 tables</strong>. They are all created by the
     <code>InitSchema()</code> method in <code>MyChatDatabase.cpp</code>. Each table uses
     <code>CREATE TABLE IF NOT EXISTS</code>, so re-running the schema creation is safe &mdash;
     it will not destroy existing data.</p>
@@ -131,7 +133,8 @@ PRAGMA busy_timeout = 3000;</code></pre>
                       │
 char_active_preset ──&gt; presets                 [ON DELETE CASCADE]
 char_channel_overrides ──&gt; presets             [ON DELETE CASCADE]
-global_settings (standalone, no foreign keys)</div>
+global_settings (standalone, no foreign keys)
+schema_version (standalone, tracks migration version)</div>
 
     <p>The <code>ON DELETE CASCADE</code> annotations mean that deleting a parent row
     automatically deletes all its children. For example, deleting a preset removes all of
@@ -319,29 +322,65 @@ global_settings (standalone, no foreign keys)</div>
 
     <h3>char_channel_overrides</h3>
 
-    <p>This is the most advanced table. It allows a character to mix and match channels from
-    <em>different</em> presets.</p>
+    <p>Stores per-character display preferences for each channel within a preset. When multiple
+    characters share the same preset, each character's tab order, enabled state, pop-out settings,
+    and other display preferences are stored here independently. The preset itself remains the
+    shared template for channel structure (names, events, filters).</p>
 
     <pre><code>CREATE TABLE char_channel_overrides (
-    char_name  TEXT NOT NULL,
-    server     TEXT NOT NULL DEFAULT '',
-    channel_id INTEGER NOT NULL,
-    preset_id  INTEGER NOT NULL,
-    PRIMARY KEY (char_name, server, channel_id),
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    char_name   TEXT NOT NULL,
+    server      TEXT NOT NULL DEFAULT '',
+    preset_id   INTEGER NOT NULL,
+    channel_id  INTEGER NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    echo        TEXT NOT NULL DEFAULT '/say',
+    main_enable INTEGER NOT NULL DEFAULT 1,
+    enable_links INTEGER NOT NULL DEFAULT 0,
+    pop_out     INTEGER NOT NULL DEFAULT 0,
+    locked      INTEGER NOT NULL DEFAULT 0,
+    scale       REAL NOT NULL DEFAULT 1.0,
+    main_font_size INTEGER NOT NULL DEFAULT 16,
+    tab_order   INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(char_name, server, preset_id, channel_id),
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
 );</code></pre>
 
-    <p>For example, you might use the "Raiding" preset overall but pull in the "Tells" channel
-    from a different preset that has special tell filters. The overrides table makes this
-    possible without duplicating the entire preset.</p>
+    <p>On first load with a preset, no override rows exist &mdash; channels keep the preset's
+    default display values. As the character customizes settings (reorders tabs, disables channels,
+    changes pop-out), those changes are saved to this table. The next session loads the preset
+    structure first, then overlays the character's display preferences from here.</p>
+
+    <div class="note">
+        <strong>What goes where:</strong> Display preferences (enabled, echo, tab_order, pop_out,
+        locked, scale, font_size, main_enable, enable_links) go in
+        <code>char_channel_overrides</code>. Structural data (channel name, events, filters) stays
+        in the preset's <code>channels</code>, <code>events</code>, and <code>filters</code> tables.
+        If a character wants different events or filters, they create a new preset.
+    </div>
+
+    <h3>schema_version</h3>
+
+    <p>Tracks which database migrations have been applied. This allows the plugin to evolve
+    the schema safely without dropping and recreating tables on every load.</p>
+
+    <pre><code>CREATE TABLE schema_version (
+    version INTEGER NOT NULL DEFAULT 0
+);</code></pre>
+
+    <p>Initialized with a single row (<code>version = 0</code>). The <code>RunMigrations()</code>
+    method checks the current version and applies any pending migrations in order. Each migration
+    increments the version after completing successfully.</p>
 
     <h3>Indexes</h3>
 
-    <p>Three indexes are created for query performance:</p>
+    <p>Four indexes are created for query performance:</p>
 
     <pre><code>CREATE INDEX IF NOT EXISTS idx_channels_preset ON channels(preset_id);
 CREATE INDEX IF NOT EXISTS idx_events_channel  ON events(channel_row_id);
-CREATE INDEX IF NOT EXISTS idx_filters_event   ON filters(event_row_id);</code></pre>
+CREATE INDEX IF NOT EXISTS idx_filters_event   ON filters(event_row_id);
+CREATE INDEX IF NOT EXISTS idx_char_channel_overrides_lookup
+    ON char_channel_overrides(char_name, server, preset_id);</code></pre>
 
     <p>These speed up the nested queries used when loading settings (preset &rarr; channels
     &rarr; events &rarr; filters).</p>
@@ -373,6 +412,37 @@ CREATE INDEX IF NOT EXISTS idx_filters_event   ON filters(event_row_id);</code><
         Useful when you want to make small tweaks to an existing setup without modifying the
         original.</li>
     </ul>
+
+    <h3>Template Preset</h3>
+
+    <p>A hidden template preset with <code>id = -1</code> is automatically seeded during
+    <code>InitSchema()</code> if it does not already exist. This template contains all 14 default
+    channels with their events and filters pre-configured. It is never shown in the UI &mdash;
+    <code>GetPresetList()</code> filters with <code>id &gt; 0</code>.</p>
+
+    <p>When creating a new blank preset via <code>CreateBlankPreset()</code>, the plugin copies
+    the template's channel structure rather than re-running all the seed INSERT statements.
+    This is faster and ensures every new preset starts from a consistent baseline. If the
+    template is somehow missing, it falls back to <code>SeedDefaultChannels()</code>.</p>
+
+    <h3>Per-Character Channel Overrides</h3>
+
+    <p>When multiple characters share the same preset, their display preferences (tab order,
+    enabled channels, pop-out settings) are stored separately in the
+    <code>char_channel_overrides</code> table. The load and save flow works as follows:</p>
+
+    <ul>
+        <li><code>LoadCharChannelOverrides()</code> &mdash; After loading the preset's channel
+        structure, overlays the character's saved display preferences onto each channel. Channels
+        with no override row keep the preset's defaults.</li>
+        <li><code>SaveCharChannelOverrides()</code> &mdash; Saves only the display preferences
+        for the current character. The preset's structural data (events, filters) is not
+        touched.</li>
+    </ul>
+
+    <p>This separation means Character A can have Guild chat enabled with tab order 2, while
+    Character B on the same preset has Guild chat disabled &mdash; without either affecting
+    the other.</p>
 
     <h3>Switching Presets</h3>
 
@@ -468,10 +538,10 @@ COMMIT;</code></pre>
             <tr><td>Crits</td><td>3</td><td><code>/say</code></td><td>Critical hits and critical heals</td></tr>
             <tr><td>Exp AA pts</td><td>4</td><td><code>/say</code></td><td>Experience and AA point gain messages</td></tr>
             <tr><td>Faction</td><td>5</td><td><code>/say</code></td><td>Faction change messages</td></tr>
-            <tr><td>Guild</td><td>6</td><td><code>/gu</code></td><td>Guild chat (disabled by default)</td></tr>
+            <tr><td>Guild</td><td>6</td><td><code>/gu</code></td><td>Guild chat</td></tr>
             <tr><td>Loot</td><td>7</td><td><code>/say</code></td><td>Loot messages</td></tr>
             <tr><td>OOC</td><td>11</td><td><code>/ooc</code></td><td>Out-of-character chat</td></tr>
-            <tr><td>Raid</td><td>12</td><td><code>/rsay</code></td><td>Raid chat (disabled by default)</td></tr>
+            <tr><td>Raid</td><td>12</td><td><code>/rsay</code></td><td>Raid chat</td></tr>
             <tr><td>Say</td><td>13</td><td><code>/say</code></td><td>Say chat</td></tr>
             <tr><td>Shout</td><td>14</td><td><code>/shout</code></td><td>Shouts and auctions</td></tr>
             <tr><td>Tells</td><td>15</td><td><code>/tell</code></td><td>Tell messages (incoming and outgoing)</td></tr>
@@ -503,33 +573,39 @@ COMMIT;</code></pre>
         &mdash; the file is copied as-is.
     </div>
 
-    <h2>Channel Overrides</h2>
+    <h2>Schema Versioning</h2>
 
-    <p>Channel overrides are a power-user feature that lets you cherry-pick individual channels
-    from different presets. Instead of switching your entire preset, you can say "use the Tells
-    channel from Preset A but everything else from Preset B."</p>
+    <p>The database uses a version-gated migration system to evolve the schema safely. The
+    <code>schema_version</code> table stores the current version number, and
+    <code>RunMigrations()</code> applies any pending migrations in order.</p>
 
-    <h3>How They Work</h3>
+    <h3>How It Works</h3>
 
-    <ul>
-        <li><code>LoadChannelOverrides()</code> &mdash; Reads the
-        <code>char_channel_overrides</code> table for the current character. For each override
-        found, it loads that specific channel from the referenced preset instead of the active
-        preset.</li>
-        <li><code>SaveChannelOverride()</code> &mdash; Saves an override for a specific
-        channel/preset pair. You specify which <code>channel_id</code> should come from which
-        <code>preset_id</code>.</li>
-    </ul>
+    <ol>
+        <li><code>InitSchema()</code> creates all tables using <code>CREATE TABLE IF NOT EXISTS</code></li>
+        <li><code>RunMigrations()</code> reads the current schema version</li>
+        <li>Each migration is guarded by a version check: <code>if (currentVersion &lt; N)</code></li>
+        <li>After each migration completes, the version is incremented</li>
+    </ol>
 
-    <p>Overrides are per-character and per-server, so different characters can mix and match
-    differently even on the same server.</p>
+    <h3>Migration History</h3>
 
-    <div class="warning">
-        <strong>Keep in mind:</strong> If you delete a preset that another character's overrides
-        reference, those overrides will break. The foreign key constraint will prevent the
-        deletion in most cases, but it is good practice to check for overrides before removing
-        a preset.
-    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Version</th>
+                <th>Changes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>0 &rarr; 1</td>
+                <td>Recreated <code>char_channel_overrides</code> table with per-character
+                display columns (enabled, echo, main_enable, enable_links, pop_out, locked,
+                scale, main_font_size, tab_order). Added lookup index.</td>
+            </tr>
+        </tbody>
+    </table>
 
     <h2>Summary</h2>
 
@@ -539,17 +615,20 @@ COMMIT;</code></pre>
     │
     ├─ Open() ──&gt; Connect to SQLite, set pragmas
     ├─ InitSchema() ──&gt; Create tables if missing
+    ├─ RunMigrations() ──&gt; Apply schema upgrades
+    ├─ Seed template preset (id=-1) if missing
     ├─ Migration check ──&gt; Copy Lua DB if needed
     ├─ GetOrCreatePreset() ──&gt; Find or create active preset
     ├─ LoadSettings() ──&gt; Channels → Events → Filters
     ├─ LoadGlobalSettings() ──&gt; Key-value pairs
-    └─ LoadChannelOverrides() ──&gt; Mix-and-match channels
+    └─ LoadCharChannelOverrides() ──&gt; Per-char display prefs
 
 Plugin Runs
     │
-    ├─ SaveSettings() ──&gt; Transaction: delete + re-insert
+    ├─ SaveCharChannelOverrides() ──&gt; Per-char display prefs
+    ├─ SaveSettings() ──&gt; Preset structure (events/filters)
     ├─ SaveGlobalSettings() ──&gt; Upsert key-value pairs
-    └─ Preset operations ──&gt; Create, copy, switch
+    └─ Preset operations ──&gt; Create, copy, rename, delete
 
 Plugin Unloads
     │

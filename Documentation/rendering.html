@@ -40,7 +40,7 @@
 
     <h2>MyChatRenderer Class</h2>
 
-    <p>The renderer exposes <strong>4 public methods</strong>, all called from
+    <p>The renderer exposes <strong>5 public methods</strong>, all called from
     <code>OnUpdateImGui</code> in <code>MQMyChat.cpp</code> every frame:</p>
 
     <table>
@@ -66,6 +66,10 @@
             <tr>
                 <td><code>RenderEditChannelGUI()</code></td>
                 <td>The channel editor window for editing events and filters</td>
+            </tr>
+            <tr>
+                <td><code>RenderPresetManager()</code></td>
+                <td>The preset management window for creating, copying, renaming, and deleting presets</td>
             </tr>
         </tbody>
     </table>
@@ -171,17 +175,19 @@
             </tr>
             <tr>
                 <td><strong>Presets menu</strong></td>
-                <td>Shows the active <a href="database.html#preset-system">preset</a> name,
-                menu items to switch presets, and a "Save As New" input field for creating
-                new presets</td>
+                <td>A combo box for quick <a href="database.html#preset-system">preset</a>
+                switching, plus a &ldquo;Manage Presets&hellip;&rdquo; menu item that opens
+                the <a href="#preset-manager">Preset Manager</a> window</td>
             </tr>
         </tbody>
     </table>
 
     <div class="note">
         <strong>Preset switching flow:</strong> When you select a different preset from the
-        Presets menu, the plugin executes a save &rarr; SetActivePreset &rarr; unload &rarr;
-        load sequence. See <a href="database.html">Database &amp; Settings</a> for details.
+        Presets combo box, the plugin executes a save &rarr; SetActivePreset &rarr; unload &rarr;
+        load sequence. Tab IDs include the preset ID, so switching presets forces ImGui to
+        discard cached tab state (ordering, selection) from the previous preset.
+        See <a href="database.html">Database &amp; Settings</a> for details.
     </div>
 
     <h3>Tab Bar</h3>
@@ -587,6 +593,66 @@
         <li><strong>Saves</strong> everything to the <a href="database.html">database</a></li>
     </ol>
 
+    <h2 id="preset-manager">Preset Manager</h2>
+
+    <p><code>RenderPresetManager()</code> draws a dedicated window for managing presets.
+    It is opened via the &ldquo;Manage Presets&hellip;&rdquo; item in the Presets menu.</p>
+
+    <pre><code>ImGui::Begin("Preset Manager##MyChat", &amp;engine.showPresetManager);</code></pre>
+
+    <ul>
+        <li><strong>First-use size:</strong> 400 x 350 pixels</li>
+    </ul>
+
+    <p>The window has four collapsible sections, each open by default:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Section</th>
+                <th>Controls</th>
+                <th>What It Does</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Copy Current Preset</strong></td>
+                <td>Text input + Copy button</td>
+                <td>Saves the current in-memory settings (both preset structure and per-character
+                overrides), then deep-copies the active preset to a new name via
+                <code>CopyPreset()</code>. The copy includes all channels, events, and filters.</td>
+            </tr>
+            <tr>
+                <td><strong>Create New Blank Preset</strong></td>
+                <td>Text input + Create button</td>
+                <td>Creates a fresh preset by copying channels from the hidden template preset
+                (<code>id = -1</code>) via <code>CreateBlankPreset()</code>. All channels are
+                enabled except Spam. Falls back to <code>SeedDefaultChannels()</code> if the
+                template is missing.</td>
+            </tr>
+            <tr>
+                <td><strong>Rename Preset</strong></td>
+                <td>Combo selector + text input + Rename button</td>
+                <td>Renames any preset. If the renamed preset is the active one, the display
+                name updates immediately.</td>
+            </tr>
+            <tr>
+                <td><strong>Delete Preset</strong></td>
+                <td>Combo selector + Delete button with confirmation</td>
+                <td>Deletes a preset and all its children (channels, events, filters) via
+                CASCADE. The active preset is excluded from the combo to prevent deleting
+                the preset currently in use. A &ldquo;Are you sure?&rdquo; confirmation
+                step prevents accidental deletion.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="note">
+        <strong>Template preset protection:</strong> The <code>DeletePreset()</code> method
+        guards against deleting presets with <code>id &lt;= 0</code>, which protects the
+        hidden template preset from accidental removal.
+    </div>
+
     <h2>Font Size Management</h2>
 
     <p>MQMyChat has two levels of font size control:</p>
@@ -688,9 +754,10 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
     ├─ RenderMainWindow()
     │   ├─ ApplyTheme()
     │   ├─ Menu Bar (Lock, Settings, Options, Channels, Links, PopOut, Presets)
+    │   │   └─ Presets: Combo box for switching + "Manage Presets..." button
     │   ├─ Tab Bar (##ChatTabs, Reorderable)
     │   │   ├─ "Main" tab → DrawMainConsole()
-    │   │   └─ Channel tabs → DrawConsole() for each (skip popOut channels)
+    │   │   └─ Channel tabs → DrawConsole() (tab IDs include preset ID)
     │   ├─ DetectTabReorder() → FlushTabOrder() after 3s debounce
     │   └─ ResetTheme()
     │
@@ -708,16 +775,22 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
     │   ├─ Save All button
     │   └─ ResetTheme()
     │
-    └─ RenderEditChannelGUI() [if open]
-        ├─ ApplyTheme()
-        ├─ Channel settings (Name, Echo, Font Size, etc.)
-        ├─ Events list with collapsible headers
-        │   ├─ Enabled checkbox → RefreshBlechEvents() on toggle
-        │   └─ Filters per event (pattern, color, toggles, reorder arrows)
-        ├─ Add Event input
-        ├─ Save button → unregister/register Blech events
-        ├─ Close button
-        └─ ResetTheme()</div>
+    ├─ RenderEditChannelGUI() [if open]
+    │   ├─ ApplyTheme()
+    │   ├─ Channel settings (Name, Echo, Font Size, etc.)
+    │   ├─ Events list with collapsible headers
+    │   │   ├─ Enabled checkbox → RefreshBlechEvents() on toggle
+    │   │   └─ Filters per event (pattern, color, toggles, reorder arrows)
+    │   ├─ Add Event input
+    │   ├─ Save button → unregister/register Blech events + SaveSettings
+    │   ├─ Close button
+    │   └─ ResetTheme()
+    │
+    └─ RenderPresetManager() [if open]
+        ├─ Copy Current Preset (text input + button)
+        ├─ Create New Blank Preset (text input + button)
+        ├─ Rename Preset (combo + text input + button)
+        └─ Delete Preset (combo + button + confirmation)</div>
 
     <p>For how the data shown in these windows is stored and loaded, see
     <a href="database.html">Database &amp; Settings</a>. For how chat lines arrive and get

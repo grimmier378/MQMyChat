@@ -194,34 +194,39 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
 
         if (ImGui::BeginMenu("Presets"))
         {
-            ImGui::Text("Active: %s", engine.activePresetName.c_str());
-            ImGui::Separator();
-
-            for (auto& preset : engine.presetList)
-            {
-                bool isActive = (preset.id == engine.activePresetId);
-                if (ImGui::MenuItem(preset.name.c_str(), nullptr, isActive))
-                {
-                    if (!isActive)
-                    {
-                        engine.SaveCharacterSettings();
-                        engine.database->SetActivePreset(engine.serverName, engine.charName, preset.id);
-                        engine.UnloadCharacterSettings();
-                        engine.LoadCharacterSettings();
-                    }
-                }
-            }
-
-            ImGui::Separator();
-            ImGui::SetNextItemWidth(150);
-            ImGui::InputText("##PresetName", m_tempPresetName, sizeof(m_tempPresetName));
+            ImGui::Text("Preset:");
             ImGui::SameLine();
-            if (ImGui::Button("Save As New") && m_tempPresetName[0] != '\0')
+            ImGui::SetNextItemWidth(150);
+            int comboIdx = 0;
+            for (int i = 0; i < static_cast<int>(engine.presetList.size()); i++)
             {
-                engine.database->SaveAsNewPreset(engine.serverName, engine.charName, m_tempPresetName, engine.settings);
-                engine.database->GetPresetList(engine.serverName, engine.presetList);
-                memset(m_tempPresetName, 0, sizeof(m_tempPresetName));
+                if (engine.presetList[i].id == engine.activePresetId)
+                    comboIdx = i;
             }
+            if (ImGui::BeginCombo("##PresetCombo", engine.activePresetName.c_str()))
+            {
+                for (int i = 0; i < static_cast<int>(engine.presetList.size()); i++)
+                {
+                    bool isSelected = (engine.presetList[i].id == engine.activePresetId);
+                    if (ImGui::Selectable(engine.presetList[i].name.c_str(), isSelected))
+                    {
+                        if (!isSelected)
+                        {
+                            engine.SaveCharacterSettings();
+                            engine.database->SetActivePreset(engine.serverName, engine.charName, engine.presetList[i].id);
+                            engine.UnloadCharacterSettings();
+                            engine.LoadCharacterSettings();
+                        }
+                    }
+                    if (isSelected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Manage Presets..."))
+                engine.showPresetManager = true;
             ImGui::EndMenu();
         }
 
@@ -251,7 +256,7 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
             if (it->second.popOut)
                 continue;
 
-            std::string tabName = fmt::format("{}##{}", sc.name, sc.id);
+            std::string tabName = fmt::format("{}##{}_{}", sc.name, sc.id, engine.activePresetId);
             bool selected = ImGui::BeginTabItem(tabName.c_str());
             float tabX = ImGui::GetItemRectMin().x;
             m_tabPositions.push_back({ sc.id, tabX });
@@ -428,7 +433,10 @@ void MyChatRenderer::RenderConfigGUI(MyChatEngine& engine)
 
         ImGui::Separator();
         if (ImGui::Button("Save All"))
+        {
+            engine.database->SaveSettings(engine.activePresetId, engine.settings);
             engine.SaveCharacterSettings();
+        }
     }
     ImGui::End();
 
@@ -671,6 +679,7 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
             engine.UnregisterBlechEvents();
             engine.RegisterBlechEvents();
             engine.SortChannels();
+            engine.database->SaveSettings(engine.activePresetId, engine.settings);
             engine.SaveCharacterSettings();
         }
         ImGui::SameLine();
@@ -977,4 +986,131 @@ void MyChatRenderer::FlushTabOrder(MyChatEngine& engine)
 
     engine.SortChannels();
     engine.SaveCharacterSettings();
+}
+
+void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
+{
+    ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Preset Manager##MyChat", &engine.showPresetManager))
+    {
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::CollapsingHeader("Copy Current Preset", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("##CopyName", m_presetCopyName, sizeof(m_presetCopyName));
+        ImGui::SameLine();
+        if (ImGui::Button("Copy") && m_presetCopyName[0] != '\0')
+        {
+            engine.SaveCharacterSettings();
+            engine.database->SaveSettings(engine.activePresetId, engine.settings);
+            engine.database->CopyPreset(engine.activePresetId, m_presetCopyName);
+            engine.database->GetPresetList(engine.serverName, engine.presetList);
+            memset(m_presetCopyName, 0, sizeof(m_presetCopyName));
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Create New Blank Preset", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("##NewBlankName", m_presetNewName, sizeof(m_presetNewName));
+        ImGui::SameLine();
+        if (ImGui::Button("Create") && m_presetNewName[0] != '\0')
+        {
+            int newId = engine.database->CreateBlankPreset(engine.serverName, engine.charName, m_presetNewName);
+            if (newId > 0)
+                engine.database->GetPresetList(engine.serverName, engine.presetList);
+            memset(m_presetNewName, 0, sizeof(m_presetNewName));
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Rename Preset", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::BeginCombo("##RenameCombo", m_renamePresetId > 0
+            ? [&]() -> const char* {
+                for (auto& p : engine.presetList)
+                    if (p.id == m_renamePresetId) return p.name.c_str();
+                return "Select...";
+            }() : "Select..."))
+        {
+            for (auto& preset : engine.presetList)
+            {
+                if (ImGui::Selectable(preset.name.c_str(), preset.id == m_renamePresetId))
+                {
+                    m_renamePresetId = preset.id;
+                    strncpy_s(m_presetRenameBuf, preset.name.c_str(), sizeof(m_presetRenameBuf) - 1);
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        if (m_renamePresetId > 0)
+        {
+            ImGui::SetNextItemWidth(200);
+            ImGui::InputText("##RenameInput", m_presetRenameBuf, sizeof(m_presetRenameBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Rename") && m_presetRenameBuf[0] != '\0')
+            {
+                engine.database->RenamePreset(m_renamePresetId, m_presetRenameBuf);
+                engine.database->GetPresetList(engine.serverName, engine.presetList);
+                if (m_renamePresetId == engine.activePresetId)
+                    engine.activePresetName = m_presetRenameBuf;
+                m_renamePresetId = -1;
+                memset(m_presetRenameBuf, 0, sizeof(m_presetRenameBuf));
+            }
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Delete Preset", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::BeginCombo("##DeleteCombo", m_deletePresetId > 0
+            ? [&]() -> const char* {
+                for (auto& p : engine.presetList)
+                    if (p.id == m_deletePresetId) return p.name.c_str();
+                return "Select...";
+            }() : "Select..."))
+        {
+            for (auto& preset : engine.presetList)
+            {
+                if (preset.id == engine.activePresetId)
+                    continue;
+                if (ImGui::Selectable(preset.name.c_str(), preset.id == m_deletePresetId))
+                {
+                    m_deletePresetId = preset.id;
+                    m_confirmDelete = false;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        if (m_deletePresetId > 0)
+        {
+            if (!m_confirmDelete)
+            {
+                if (ImGui::Button("Delete"))
+                    m_confirmDelete = true;
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Are you sure?");
+                ImGui::SameLine();
+                if (ImGui::Button("Yes, Delete"))
+                {
+                    engine.database->DeletePreset(m_deletePresetId);
+                    engine.database->GetPresetList(engine.serverName, engine.presetList);
+                    m_deletePresetId = -1;
+                    m_confirmDelete = false;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel"))
+                    m_confirmDelete = false;
+            }
+        }
+    }
+
+    ImGui::End();
 }

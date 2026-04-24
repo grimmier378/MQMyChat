@@ -87,6 +87,7 @@ public:
     bool                                 m_lastSavedShowMain = true;
 
     bool                                 enableSpam = false;
+    bool                                 showPresetManager = false;
 
 private:
     std::unique_ptr<Blech>               m_blech;

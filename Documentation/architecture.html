@@ -25,6 +25,8 @@
 <main class="content">
     <h1>Architecture Overview</h1>
 
+    <p><em>Last Updated: 2026-04-24</em></p>
+
     <p>This page explains how MQMyChat is structured: what the major pieces are, how data flows
     through them, and how the source files relate to each other. If you are new to the codebase,
     start here before diving into specific topics.</p>
@@ -201,13 +203,15 @@
 
     <p>The database layer. <code>MyChatDatabase</code> wraps SQLite3 and provides methods to
     load and save the entire settings tree. The cpp file is one of the largest in the project
-    (832 lines) because it handles:</p>
+    (~960 lines) because it handles:</p>
 
     <ul>
         <li>Creating the database schema (tables for channels, events, filters, settings)</li>
         <li>Seeding default presets so new users get a reasonable starting configuration</li>
         <li>Loading everything on startup and saving changes back</li>
         <li>Schema migration when the database format changes between versions</li>
+        <li>Per-character channel display overrides (separate from preset structure)</li>
+        <li>Template preset seeding for consistent blank preset creation</li>
     </ul>
 
     <p>For a deep dive, see <a href="database.html">Database &amp; Settings</a>.</p>
@@ -227,9 +231,10 @@
         <li>The channel editor (add/remove/edit channels, events, filters)</li>
         <li>Tab reordering via drag-and-drop</li>
         <li>Theme selection</li>
+        <li>Preset management (copy, create blank, rename, delete)</li>
     </ul>
 
-    <p>At 955 lines, this is the second-largest file. For details, see
+    <p>At ~1115 lines, this is the second-largest file. For details, see
     <a href="rendering.html">ImGui Rendering</a>.</p>
 
     <h3>MyChatTLO.h + MyChatTLO.cpp &mdash; Macro Interface</h3>
