@@ -430,16 +430,11 @@ void MyChatDatabase::LoadSettings(int presetId, MyChatSettings& outSettings)
                         filt.filterIndex = sqlite3_column_int(filtStmt, 0);
                         filt.filterString = reinterpret_cast<const char*>(sqlite3_column_text(filtStmt, 1));
 
-                        float r = static_cast<float>(sqlite3_column_double(filtStmt, 2));
-                        float g = static_cast<float>(sqlite3_column_double(filtStmt, 3));
-                        float b = static_cast<float>(sqlite3_column_double(filtStmt, 4));
-                        float a = static_cast<float>(sqlite3_column_double(filtStmt, 5));
-                        filt.color = MQColor(
-                            static_cast<uint8_t>(r * 255.0f),
-                            static_cast<uint8_t>(g * 255.0f),
-                            static_cast<uint8_t>(b * 255.0f),
-                            static_cast<uint8_t>(a * 255.0f)
-                        );
+                        filt.color = MQColor(ImVec4(
+                            static_cast<float>(sqlite3_column_double(filtStmt, 2)),
+                            static_cast<float>(sqlite3_column_double(filtStmt, 3)),
+                            static_cast<float>(sqlite3_column_double(filtStmt, 4)),
+                            static_cast<float>(sqlite3_column_double(filtStmt, 5))));
 
                         filt.enabled = sqlite3_column_int(filtStmt, 6) != 0;
                         filt.hidden = sqlite3_column_int(filtStmt, 7) != 0;
@@ -538,10 +533,11 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
                 sqlite3_bind_int(stmt, 1, evtRowId);
                 sqlite3_bind_int(stmt, 2, filt.filterIndex);
                 sqlite3_bind_text(stmt, 3, filt.filterString.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_double(stmt, 4, static_cast<double>(filt.color.Red) / 255.0);
-                sqlite3_bind_double(stmt, 5, static_cast<double>(filt.color.Green) / 255.0);
-                sqlite3_bind_double(stmt, 6, static_cast<double>(filt.color.Blue) / 255.0);
-                sqlite3_bind_double(stmt, 7, static_cast<double>(filt.color.Alpha) / 255.0);
+                const ImColor c = filt.color.ToImColor();
+                sqlite3_bind_double(stmt, 4, c.Value.x);
+                sqlite3_bind_double(stmt, 5, c.Value.y);
+                sqlite3_bind_double(stmt, 6, c.Value.z);
+                sqlite3_bind_double(stmt, 7, c.Value.w);
                 sqlite3_bind_int(stmt, 8, filt.enabled ? 1 : 0);
                 sqlite3_bind_int(stmt, 9, filt.hidden ? 1 : 0);
                 sqlite3_step(stmt);
@@ -577,31 +573,31 @@ void MyChatDatabase::LoadGlobalSettings(const std::string& server, const std::st
         std::string value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
 
         if (key == "locked")
-            outSettings.windowLocked = (value == "1" || value == "true");
+            outSettings.windowLocked = GetBoolFromString(value, outSettings.windowLocked);
         else if (key == "timeStamps")
-            outSettings.timeStamps = (value == "1" || value == "true");
+            outSettings.timeStamps = GetBoolFromString(value, outSettings.timeStamps);
         else if (key == "Scale")
-            outSettings.scale = std::stof(value);
+            outSettings.scale = GetFloatFromString(value, outSettings.scale);
         else if (key == "themeIdx")
-            outSettings.themeIdx = std::stoi(value);
+            outSettings.themeIdx = GetIntFromString(value, outSettings.themeIdx);
         else if (key == "doLinks")
-            outSettings.doLinks = (value == "1" || value == "true");
+            outSettings.doLinks = GetBoolFromString(value, outSettings.doLinks);
         else if (key == "mainEcho")
             outSettings.mainEcho = value;
         else if (key == "MainFontSize")
-            outSettings.mainFontSize = std::stoi(value);
+            outSettings.mainFontSize = GetIntFromString(value, outSettings.mainFontSize);
         else if (key == "LogCommands")
-            outSettings.logCommands = (value == "1" || value == "true");
+            outSettings.logCommands = GetBoolFromString(value, outSettings.logCommands);
         else if (key == "keyFocus")
-            outSettings.keyFocus = (value == "1" || value == "true");
+            outSettings.keyFocus = GetBoolFromString(value, outSettings.keyFocus);
         else if (key == "keyName")
             outSettings.keyName = value;
         else if (key == "localEcho")
-            outSettings.localEcho = (value == "1" || value == "true");
+            outSettings.localEcho = GetBoolFromString(value, outSettings.localEcho);
         else if (key == "autoScroll")
-            outSettings.autoScroll = (value == "1" || value == "true");
+            outSettings.autoScroll = GetBoolFromString(value, outSettings.autoScroll);
         else if (key == "maxBufferLines")
-            outSettings.maxBufferLines = std::stoi(value);
+            outSettings.maxBufferLines = GetIntFromString(value, outSettings.maxBufferLines);
     }
 
     sqlite3_finalize(stmt);

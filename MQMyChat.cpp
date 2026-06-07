@@ -1154,7 +1154,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 				PlayerClient* pPlayer = pMember->GetPlayer();
 				if (!pPlayer) continue;
 				int classId = pPlayer->GetClass();
-				if (classId == 2 || classId == 6 || classId == 10)
+				if (classId == Cleric || classId == Druid || classId == Shaman)
 				{
 					std::string tryResult = result;
 					size_t pos = tryResult.find("H1");
@@ -1200,7 +1200,7 @@ bool MyChatEngine::MatchFilter(const std::string& line, const ChatFilter& filter
 	std::string matchStr = filter.filterString;
 	bool invert = false;
 
-	if (matchStr.size() > 3 && matchStr.substr(0, 3) == "NO2")
+	if (matchStr.size() > 3 && starts_with(matchStr, "NO2"))
 	{
 		invert = true;
 		matchStr = matchStr.substr(3);

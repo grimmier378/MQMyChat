@@ -564,7 +564,7 @@ m_claimedLines[lineStr] = ClaimedLine{
     std::string matchStr = filter.filterString;
     bool invert = false;
 
-    if (matchStr.size() > 3 && matchStr.substr(0, 3) == "NO2")
+    if (matchStr.size() > 3 && starts_with(matchStr, "NO2"))   // mq/base/String.h
     {
         invert = true;
         matchStr = matchStr.substr(3);

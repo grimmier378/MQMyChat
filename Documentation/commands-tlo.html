@@ -283,10 +283,8 @@
 size_t sep = input.find(',');
 if (sep != std::string::npos)
 {
-    std::string channel = input.substr(0, sep);
-    std::string message = input.substr(sep + 1);
-    // trim leading/trailing spaces from channel name
-    // trim leading spaces from message
+    std::string channel = trim_copy(input.substr(0, sep));   // mq/base/String.h
+    std::string message = ltrim_copy(input.substr(sep + 1));
     g_chatEngine-&gt;SendToChannel(channel, message);
 }</code></pre>
 

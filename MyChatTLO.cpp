@@ -110,11 +110,8 @@ bool MyChatType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, MQT
 				size_t sep = input.find(',');
 				if (sep != std::string::npos)
 				{
-					std::string channel = input.substr(0, sep);
-					std::string message = input.substr(sep + 1);
-					while (!channel.empty() && channel.front() == ' ') channel.erase(channel.begin());
-					while (!channel.empty() && channel.back() == ' ') channel.pop_back();
-					while (!message.empty() && message.front() == ' ') message.erase(message.begin());
+					std::string channel = trim_copy(input.substr(0, sep));
+					std::string message = ltrim_copy(input.substr(sep + 1));
 					g_chatEngine->SendToChannel(channel, message);
 					Dest.Set(true);
 					Dest.Type = mq::datatypes::pBoolType;
@@ -144,11 +141,9 @@ bool MyChatType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, MQT
 
 		if (Index[0])
 		{
-			char* end = nullptr;
-			long numId = strtol(Index, &end, 10);
-			if (end != Index && *end == '\0')
+			if (IsNumber(Index))
 			{
-				auto it = g_chatEngine->settings.channels.find(static_cast<int>(numId));
+				auto it = g_chatEngine->settings.channels.find(GetIntFromString(Index, -1));
 				if (it != g_chatEngine->settings.channels.end())
 				{
 					Dest.Int = it->second.channelId;

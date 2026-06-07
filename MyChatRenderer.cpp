@@ -530,20 +530,11 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     evt.eventString = evtBuf;
 
                 auto& defaultFilt = evt.filters[0];
-                ImVec4 evtCol = ImVec4(
-                    defaultFilt.color.Red / 255.0f,
-                    defaultFilt.color.Green / 255.0f,
-                    defaultFilt.color.Blue / 255.0f,
-                    defaultFilt.color.Alpha / 255.0f);
+                ImVec4 evtCol = defaultFilt.color.ToImColor();
                 ImGui::Text("Event Color:");
                 ImGui::SameLine();
                 if (ImGui::ColorEdit4("##evtColor", &evtCol.x, ImGuiColorEditFlags_NoInputs))
-                {
-                    defaultFilt.color.Red = static_cast<uint8_t>(evtCol.x * 255.0f);
-                    defaultFilt.color.Green = static_cast<uint8_t>(evtCol.y * 255.0f);
-                    defaultFilt.color.Blue = static_cast<uint8_t>(evtCol.z * 255.0f);
-                    defaultFilt.color.Alpha = static_cast<uint8_t>(evtCol.w * 255.0f);
-                }
+                    defaultFilt.color = MQColor(evtCol);
 
                 ImGui::Indent();
                 if (evt.filters.size() > 1)
@@ -563,18 +554,9 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                         flt.filterString = fltBuf;
 
                     ImGui::SameLine();
-                    ImVec4 col = ImVec4(
-                        flt.color.Red / 255.0f,
-                        flt.color.Green / 255.0f,
-                        flt.color.Blue / 255.0f,
-                        flt.color.Alpha / 255.0f);
+                    ImVec4 col = flt.color.ToImColor();
                     if (ImGui::ColorEdit4("##fltColor", &col.x, ImGuiColorEditFlags_NoInputs))
-                    {
-                        flt.color.Red = static_cast<uint8_t>(col.x * 255.0f);
-                        flt.color.Green = static_cast<uint8_t>(col.y * 255.0f);
-                        flt.color.Blue = static_cast<uint8_t>(col.z * 255.0f);
-                        flt.color.Alpha = static_cast<uint8_t>(col.w * 255.0f);
-                    }
+                        flt.color = MQColor(col);
 
                     ImGui::SameLine();
                     ImGui::Checkbox("On##flt", &flt.enabled);
@@ -745,10 +727,8 @@ void MyChatRenderer::DrawConsole(MyChatEngine& engine, int channelId)
 
     if (bTextEdit)
     {
-        char* s = ch.inputBuffer;
-        while (*s == ' ' || *s == '\t') s++;
-        size_t len = strlen(s);
-        while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) s[--len] = '\0';
+        std::string trimmed = trim_copy(std::string(ch.inputBuffer));
+        const char* s = trimmed.c_str();
 
         if (s[0])
         {
@@ -868,10 +848,8 @@ void MyChatRenderer::DrawMainConsole(MyChatEngine& engine)
 
     if (bTextEdit)
     {
-        char* s = mainInputBuffer;
-        while (*s == ' ' || *s == '\t') s++;
-        size_t len = strlen(s);
-        while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) s[--len] = '\0';
+        std::string trimmed = trim_copy(std::string(mainInputBuffer));
+        const char* s = trimmed.c_str();
 
         if (s[0])
         {
