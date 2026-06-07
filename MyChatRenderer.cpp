@@ -594,8 +594,6 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                 if (filterSwapFrom >= 1 && filterSwapTo >= 1)
                 {
                     std::swap(evt.filters[filterSwapFrom], evt.filters[filterSwapTo]);
-                    evt.filters[filterSwapFrom].filterIndex = filterSwapFrom;
-                    evt.filters[filterSwapTo].filterIndex = filterSwapTo;
                 }
 
                 if (filterToRemove >= 1)
@@ -603,9 +601,7 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
 
                 if (ImGui::SmallButton("Add Filter"))
                 {
-                    ChatFilter newFilter;
-                    newFilter.filterIndex = static_cast<int>(evt.filters.size());
-                    evt.filters.push_back(newFilter);
+                    evt.filters.push_back(ChatFilter{});
                 }
                 if (ImGui::IsItemHovered())
                 {
@@ -633,6 +629,11 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
                     ImGui::EndTooltip();
                 }
 
+                for (int idx = 0; idx < static_cast<int>(evt.filters.size()); idx++)
+                {
+                    evt.filters[idx].filterIndex = idx;
+                }
+
                 ImGui::Unindent();
             }
 
@@ -648,8 +649,16 @@ void MyChatRenderer::RenderEditChannelGUI(MyChatEngine& engine)
         ImGui::SameLine();
         if (ImGui::Button("Add Event") && m_tempEventString[0] != '\0')
         {
+            int newEventIndex = 0;
+            for (const auto& existing : ch.events)
+            {
+                if (existing.eventIndex >= newEventIndex)
+                {
+                    newEventIndex = existing.eventIndex + 1;
+                }
+            }
             ChatEvent newEvent;
-            newEvent.eventIndex = static_cast<int>(ch.events.size());
+            newEvent.eventIndex = newEventIndex;
             newEvent.eventString = m_tempEventString;
             ch.events.push_back(newEvent);
             memset(m_tempEventString, 0, sizeof(m_tempEventString));
