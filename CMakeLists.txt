@@ -15,6 +15,7 @@ set(MQMyChat_HEADERS
     MyChatDatabase.h
     MyChatRenderer.h
     MyChatTLO.h
+    MyChatAPI.h
     Theme.h
 )
 

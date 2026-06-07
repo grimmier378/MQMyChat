@@ -77,6 +77,7 @@
     <ClInclude Include="MyChatDatabase.h" />
     <ClInclude Include="MyChatRenderer.h" />
     <ClInclude Include="MyChatTLO.h" />
+    <ClInclude Include="MyChatAPI.h" />
     <ClInclude Include="Theme.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

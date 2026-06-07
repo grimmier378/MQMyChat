@@ -3,6 +3,7 @@
 #include "MyChatDatabase.h"
 #include "MyChatRenderer.h"
 #include "MyChatTLO.h"
+#include "MyChatAPI.h"
 
 #include <zep/display.h>
 #include <filesystem>
@@ -38,6 +39,123 @@ PLUGIN_API void ShutdownPlugin()
 	g_chatEngine->Shutdown();
 	delete g_chatEngine;
 	g_chatEngine = nullptr;
+}
+
+namespace
+{
+class ChatAPIImpl : public mqmychat::ChatAPI
+{
+public:
+	int GetAPIVersion() const override
+	{
+		return mqmychat::MQMYCHAT_API_VERSION;
+	}
+
+	bool Send(std::string_view channel, std::string_view message, MQColor color) override
+	{
+		if (!g_chatEngine)
+		{
+			return false;
+		}
+
+		g_chatEngine->SendToChannel(std::string(channel), std::string(message), color);
+		return true;
+	}
+
+	void SendToMain(std::string_view message, MQColor color) override
+	{
+		if (g_chatEngine)
+		{
+			g_chatEngine->SendToChannel("main", std::string(message), color);
+		}
+	}
+
+	bool ChannelExists(std::string_view channel) const override
+	{
+		if (!g_chatEngine)
+		{
+			return false;
+		}
+
+		for (const auto& [id, ch] : g_chatEngine->settings.channels)
+		{
+			if (ci_equals(ch.name, channel))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	int GetChannelCount() const override
+	{
+		return g_chatEngine ? static_cast<int>(g_chatEngine->settings.channels.size()) : 0;
+	}
+
+	bool IsChannelEnabled(std::string_view channel) const override
+	{
+		if (!g_chatEngine)
+		{
+			return false;
+		}
+
+		for (const auto& [id, ch] : g_chatEngine->settings.channels)
+		{
+			if (ci_equals(ch.name, channel))
+			{
+				return ch.enabled;
+			}
+		}
+		return false;
+	}
+
+	bool CreateChannel(std::string_view channel) override
+	{
+		if (!g_chatEngine || ChannelExists(channel))
+		{
+			return false;
+		}
+
+		g_chatEngine->CreateChannel(std::string(channel));
+		return true;
+	}
+
+	void Clear(std::string_view channel) override
+	{
+		if (!g_chatEngine)
+		{
+			return;
+		}
+
+		if (channel.empty() || ci_equals(channel, "main"))
+		{
+			if (g_chatEngine->mainConsole)
+			{
+				g_chatEngine->mainConsole->Clear();
+			}
+			return;
+		}
+
+		for (auto& [id, ch] : g_chatEngine->settings.channels)
+		{
+			if (ci_equals(ch.name, channel))
+			{
+				if (ch.console)
+				{
+					ch.console->Clear();
+				}
+				return;
+			}
+		}
+	}
+};
+
+ChatAPIImpl s_chatAPI;
+} // namespace
+
+PLUGIN_API mq::PluginInterface* GetPluginInterface()
+{
+	return &s_chatAPI;
 }
 
 PLUGIN_API void SetGameState(int GameState)
@@ -643,12 +761,12 @@ void MyChatEngine::SyncFontSizes()
 	}
 }
 
-void MyChatEngine::SendToChannel(const std::string& channelName, const std::string& message)
+void MyChatEngine::SendToChannel(const std::string& channelName, const std::string& message, MQColor color)
 {
 	if (ci_equals(channelName, "main"))
 	{
 		if (mainConsole)
-			AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
+			AppendToConsole(mainConsole, message, color);
 		return;
 	}
 
@@ -657,10 +775,10 @@ void MyChatEngine::SendToChannel(const std::string& channelName, const std::stri
 		if (ci_equals(ch.name, channelName))
 		{
 			if (ch.console)
-				AppendToConsole(ch.console, message, MQColor(240, 240, 240));
+				AppendToConsole(ch.console, message, color);
 
 			if (ch.mainEnable && mainConsole)
-				AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
+				AppendToConsole(mainConsole, message, color);
 			return;
 		}
 	}
@@ -672,10 +790,10 @@ void MyChatEngine::SendToChannel(const std::string& channelName, const std::stri
 	if (it != settings.channels.end())
 	{
 		if (it->second.console)
-			AppendToConsole(it->second.console, message, MQColor(240, 240, 240));
+			AppendToConsole(it->second.console, message, color);
 
 		if (it->second.mainEnable && mainConsole)
-			AppendToConsole(mainConsole, message, MQColor(240, 240, 240));
+			AppendToConsole(mainConsole, message, color);
 	}
 }
 

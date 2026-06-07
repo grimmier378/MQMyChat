@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MyChatChannel.h"
+#include "MyChatAPI.h"
 
 #include <mq/imgui/ConsoleWidget.h>
 #include <Blech/Blech.h>
@@ -36,7 +37,8 @@ public:
     void ProcessIncomingChat(const char* line, int color);
     void ProcessWriteChat(const char* line, int color);
 
-    void SendToChannel(const std::string& channelName, const std::string& message);
+    void SendToChannel(const std::string& channelName, const std::string& message,
+        MQColor color = mqmychat::MQMYCHAT_DEFAULT_COLOR);
     void CreateChannel(const std::string& name, int channelId = -1);
     int  GetNextChannelId() const;
 
