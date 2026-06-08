@@ -12,6 +12,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Core\Widgets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="MQMyChat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -26,6 +29,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Core\Widgets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="MQMyChat.h">
       <Filter>Header Files</Filter>
     </ClInclude>

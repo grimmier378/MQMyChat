@@ -3,6 +3,7 @@ include("../../src/Plugin.cmake")
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 set(MQMyChat_SOURCES
+    Core/Widgets.cpp
     MQMyChat.cpp
     MyChatDatabase.cpp
     MyChatRenderer.cpp
@@ -10,6 +11,7 @@ set(MQMyChat_SOURCES
 )
 
 set(MQMyChat_HEADERS
+    Core/Widgets.h
     MQMyChat.h
     MyChatChannel.h
     MyChatDatabase.h

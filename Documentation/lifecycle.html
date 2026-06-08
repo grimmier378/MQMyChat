@@ -203,11 +203,8 @@
     s_renderer.RenderMainWindow(*g_chatEngine);
     s_renderer.RenderPopOutWindows(*g_chatEngine);
 
-    if (g_chatEngine->showConfigGUI)
-        s_renderer.RenderConfigGUI(*g_chatEngine);
-
-    if (g_chatEngine->showEditGUI)
-        s_renderer.RenderEditChannelGUI(*g_chatEngine);
+    if (g_chatEngine->showSettingsWindow)
+        s_renderer.RenderSettingsWindow(*g_chatEngine);
 
     if (g_chatEngine->showPresetManager)
         s_renderer.RenderPresetManager(*g_chatEngine);

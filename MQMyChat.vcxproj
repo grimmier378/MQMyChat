@@ -66,12 +66,14 @@
     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
   </PropertyGroup>
   <ItemGroup>
+    <ClCompile Include="Core\Widgets.cpp" />
     <ClCompile Include="MQMyChat.cpp" />
     <ClCompile Include="MyChatDatabase.cpp" />
     <ClCompile Include="MyChatRenderer.cpp" />
     <ClCompile Include="MyChatTLO.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Core\Widgets.h" />
     <ClInclude Include="MQMyChat.h" />
     <ClInclude Include="MyChatChannel.h" />
     <ClInclude Include="MyChatDatabase.h" />

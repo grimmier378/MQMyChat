@@ -68,6 +68,7 @@ struct MyChatSettings {
     std::map<int, ChatChannel> channels;
 };
 
+static constexpr int CHANNEL_MAIN_ID = -1;
 static constexpr int CHANNEL_SPAM = 9000;
 static constexpr int CHANNEL_RESERVED_START = 9000;
 static constexpr float CLAIMED_TTL = 0.5f;

@@ -464,56 +464,54 @@ print("Window locked:", locked)</code></pre>
         optionally persist new settings.
     </div>
 
-    <p>We will add a "Clear All" button to the config GUI that clears every channel's
+    <p>We will add a "Clear All" button to the settings window that clears every channel's
     console in one click.</p>
 
     <h3>Step 1: Find the Right Render Method</h3>
 
-    <p>Open <strong>MyChatRenderer.cpp</strong>. The config window is drawn by
-    <code>RenderConfigGUI()</code> (line 303). Other render methods you might work in:</p>
+    <p>Open <strong>MyChatRenderer.cpp</strong>. The settings window is drawn by
+    <code>RenderSettingsWindow()</code>. Other render methods you might work in:</p>
 
     <ul>
-        <li><code>RenderMainWindow()</code> (line 67) &mdash; the main tabbed chat
-        window.</li>
-        <li><code>RenderPopOutWindows()</code> (line 264) &mdash; detached channel
-        windows.</li>
-        <li><code>RenderEditChannelGUI()</code> (line 414) &mdash; the channel editor
-        dialog.</li>
+        <li><code>RenderMainWindow()</code> &mdash; the main tabbed chat window.</li>
+        <li><code>RenderPopOutWindows()</code> &mdash; detached channel windows.</li>
+        <li><code>DrawChannelSettingsTab()</code> / <code>DrawEventsAndFiltersTab()</code>
+        &mdash; the per-channel Settings and Events/Filters tabs inside the settings window.</li>
     </ul>
 
     <h3>Step 2: Understand the ImGui Flow</h3>
 
-    <p><code>RenderConfigGUI()</code> starts with:</p>
+    <p><code>RenderSettingsWindow()</code> starts with:</p>
 
-<pre><code>void MyChatRenderer::RenderConfigGUI(MyChatEngine&amp; engine)
+<pre><code>void MyChatRenderer::RenderSettingsWindow(MyChatEngine&amp; engine)
 {
-    if (!engine.showConfigGUI)
+    if (!engine.showSettingsWindow)
         return;
 
     auto oldStyle = ImGuiTheme::ApplyTheme(engine.settings.themeIdx);
 
-    std::string winName = fmt::format("My Chat - Config##MQMyChat_{}", engine.charName);
-    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(winName.c_str(), &amp;engine.showConfigGUI, ImGuiWindowFlags_None))
+    std::string winName = fmt::format("My Chat - Settings##MQMyChat_{}", engine.charName);
+    ImGui::SetNextWindowSize(ImVec2(720, 460), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(winName.c_str(), &amp;engine.showSettingsWindow, ImGuiWindowFlags_None))
     {
-        // ... channel table is drawn here ...
+        // ... channel list + detail panes are drawn here ...
     }
     ImGui::End();
 }</code></pre>
 
     <p>The pattern is: <code>Begin()</code> opens the window, content goes inside the
     <code>if</code> block, and <code>End()</code> closes it. Widgets you add inside this
-    block will appear in the config window. Unlike traditional GUIs where you create a
+    block will appear in the settings window. Unlike traditional GUIs where you create a
     button once, ImGui is <strong>immediate mode</strong> &mdash; your code runs every
     frame (~60 times per second), and each call to <code>ImGui::Button()</code> both
     draws the button and returns <code>true</code> if it was clicked that frame.</p>
 
     <h3>Step 3: Add the Button</h3>
 
-    <p>A good place for a "Clear All" button is just before the channel table. Add it
-    right after the <code>ImGui::Begin()</code> check:</p>
+    <p>A good place for a "Clear All" button is just after the <code>ImGui::Begin()</code>
+    check, above the channel list / detail panes:</p>
 
-<pre><code>if (ImGui::Begin(winName.c_str(), &amp;engine.showConfigGUI, ImGuiWindowFlags_None))
+<pre><code>if (ImGui::Begin(winName.c_str(), &amp;engine.showSettingsWindow, ImGuiWindowFlags_None))
 {
     if (ImGui::Button("Clear All Channels"))
     {

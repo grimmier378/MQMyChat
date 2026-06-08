@@ -5,6 +5,8 @@
 #include "MyChatTLO.h"
 #include "MyChatAPI.h"
 
+#include "imgui/imanim/im_anim.h"
+
 #include <zep/display.h>
 #include <filesystem>
 #include <fmt/format.h>
@@ -21,6 +23,13 @@ PLUGIN_VERSION(0.1);
 
 MyChatEngine* g_chatEngine = nullptr;
 static MyChatRenderer s_renderer;
+
+// Plugin-owned imanim context for the styled/animated widgets (Core/Widgets.cpp).
+// imanim's current context is a file-static in MQ2Main, not reliably valid from
+// inside this DLL, so we own a context and make it current around our render pass.
+// The host (MQ2Main ImGuiManager) already drives the shared clock each frame, so
+// we never call iam_update_begin_frame() ourselves.
+static iam_context* s_iamCtx = nullptr;
 
 static void MyChatCommand(PlayerClient*, const char* szLine);
 
@@ -39,6 +48,14 @@ PLUGIN_API void ShutdownPlugin()
 	g_chatEngine->Shutdown();
 	delete g_chatEngine;
 	g_chatEngine = nullptr;
+
+	// Remove our context from imanim's global list so the host's next per-frame
+	// update never walks a freed pointer after we unload.
+	if (s_iamCtx)
+	{
+		iam_context_destroy(s_iamCtx);
+		s_iamCtx = nullptr;
+	}
 }
 
 namespace
@@ -187,17 +204,28 @@ PLUGIN_API void OnUpdateImGui()
 	if (!g_chatEngine || GetGameState() != GAMESTATE_INGAME)
 		return;
 
+	if (!s_iamCtx)
+	{
+		s_iamCtx = iam_context_create();
+		iam_context_set_current(s_iamCtx);
+		// Disable lazy-init so channels whose first target equals their init value
+		// still animate on the first change instead of snapping (pills/reveals).
+		iam_set_lazy_init(false);
+	}
+	// Make our context current for the render pass; the host drives the clock, so
+	// do NOT call iam_update_begin_frame() here (would double-advance -> 2x speed).
+	iam_context* prevCtx = iam_context_set_current(s_iamCtx);
+
 	s_renderer.RenderMainWindow(*g_chatEngine);
 	s_renderer.RenderPopOutWindows(*g_chatEngine);
 
-	if (g_chatEngine->showConfigGUI)
-		s_renderer.RenderConfigGUI(*g_chatEngine);
-
-	if (g_chatEngine->showEditGUI)
-		s_renderer.RenderEditChannelGUI(*g_chatEngine);
+	if (g_chatEngine->showSettingsWindow)
+		s_renderer.RenderSettingsWindow(*g_chatEngine);
 
 	if (g_chatEngine->showPresetManager)
 		s_renderer.RenderPresetManager(*g_chatEngine);
+
+	iam_context_set_current(prevCtx);
 }
 
 PLUGIN_API void OnPulse()
@@ -289,7 +317,7 @@ static void MyChatCommand(PlayerClient*, const char* szLine)
 
 	if (ci_equals(arg, "config"))
 	{
-		g_chatEngine->showConfigGUI = !g_chatEngine->showConfigGUI;
+		g_chatEngine->showSettingsWindow = !g_chatEngine->showSettingsWindow;
 		return;
 	}
 

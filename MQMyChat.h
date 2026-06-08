@@ -82,9 +82,8 @@ public:
     std::string                          dbPath;
 
     bool                                 showMainWindow = true;
-    bool                                 showConfigGUI = false;
-    bool                                 showEditGUI = false;
-    int                                  editChannelId = 0;
+    bool                                 showSettingsWindow = false;
+    int                                  settingsChannelId = CHANNEL_MAIN_ID;
 
     bool                                 m_lastSavedShowMain = true;
 

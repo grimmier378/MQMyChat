@@ -5,6 +5,7 @@
 #include <utility>
 
 struct ImGuiInputTextCallbackData;
+struct ChatChannel;
 class MyChatEngine;
 
 class MyChatRenderer
@@ -12,8 +13,7 @@ class MyChatRenderer
 public:
     void RenderMainWindow(MyChatEngine& engine);
     void RenderPopOutWindows(MyChatEngine& engine);
-    void RenderConfigGUI(MyChatEngine& engine);
-    void RenderEditChannelGUI(MyChatEngine& engine);
+    void RenderSettingsWindow(MyChatEngine& engine);
     void RenderPresetManager(MyChatEngine& engine);
 
 private:
@@ -24,6 +24,12 @@ private:
     void FlushTabOrder(MyChatEngine& engine);
     bool CheckFocusKey(MyChatEngine& engine) const;
 
+    void DrawChannelList(MyChatEngine& engine);
+    void DrawMainSettingsTab(MyChatEngine& engine);
+    void DrawChannelSettingsTab(MyChatEngine& engine, ChatChannel& ch);
+    void DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& ch);
+    bool PopupTextEdit(const char* id, std::string& value, float width = -1.0f);
+
     std::vector<std::pair<int, float>> m_tabPositions;
     std::vector<int>                   m_lastTabOrder;
     bool                               m_tabOrderDirty = false;
@@ -31,14 +37,11 @@ private:
 
     bool m_setFocus = false;
 
-    bool m_addingChannel = false;
-    int  m_editEventId = 0;
+    int  m_selEventIndex = -1;
+    int  m_settingsTab = 0;
 
-    char m_tempName[256] = {};
-    char m_tempEcho[256] = {};
-    char m_tempEventString[1024] = {};
-    char m_tempFilterString[1024] = {};
-    char m_tempPresetName[256] = {};
+    char m_popupBuf[2048] = {};
+    bool m_popupFocus = false;
 
     char m_presetCopyName[256] = {};
     char m_presetNewName[256] = {};

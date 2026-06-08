@@ -60,12 +60,9 @@
                 <td>Separate ImGui windows for channels that have been "popped out"</td>
             </tr>
             <tr>
-                <td><code>RenderConfigGUI()</code></td>
-                <td>The settings/configuration window where you manage channels</td>
-            </tr>
-            <tr>
-                <td><code>RenderEditChannelGUI()</code></td>
-                <td>The channel editor window for editing events and filters</td>
+                <td><code>RenderSettingsWindow()</code></td>
+                <td>The unified two-pane settings window: a channel list (including Main) on the
+                    left, and Settings / Events and Filters tabs for the selected channel on the right</td>
             </tr>
             <tr>
                 <td><code>RenderPresetManager()</code></td>
@@ -398,100 +395,123 @@
     regardless of which tab is active in the main window. For example, you might pop out
     your Tells channel so you never miss an incoming tell.</p>
 
-    <h2 id="config-gui">Config GUI</h2>
+    <h2 id="config-gui">Settings Window</h2>
 
-    <p><code>RenderConfigGUI()</code> (line 303) draws the channel management window.</p>
+    <p><code>RenderSettingsWindow()</code> draws the unified, two-pane settings window. It
+    replaces the former separate Config and Edit Channel windows. The gear cog button in the
+    main window's menu bar, the <code>/mychat config</code> command, and a pop-out window's
+    gear button all open it (the pop-out gear pre-selects that channel via
+    <code>engine.settingsChannelId</code>).</p>
 
-    <pre><code>ImGui::Begin("My Chat - Config##MQMyChat_{charName}", ...);</code></pre>
+    <pre><code>ImGui::Begin("My Chat - Settings##MQMyChat_{charName}", ...);</code></pre>
 
     <ul>
-        <li><strong>First-use size:</strong> 500 x 400 pixels</li>
+        <li><strong>First-use size:</strong> 720 x 460 pixels</li>
     </ul>
 
-    <h3>Channel Table</h3>
+    <h3>Layout</h3>
 
-    <p>The main content is a table listing all channels. Each row uses
-    <code>ImGui::PushID(id)</code> / <code>ImGui::PopID()</code> to scope its widgets. This
-    is an ImGui pattern that prevents ID collisions &mdash; without it, every "Edit" button
-    would have the same internal ID and ImGui would not know which one you clicked. By
-    pushing the channel ID onto the ID stack, each row's widgets get unique IDs
-    automatically.</p>
+    <p>The window is split into a left channel list and a right detail pane, with a Save /
+    Close footer underneath both:</p>
 
-    <p>The table columns are:</p>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Column</th>
-                <th>Description</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td>Enabled</td><td>Checkbox to turn the channel on or off. Toggling this
-            calls <code>RefreshBlechEvents()</code> immediately so Blech patterns are
-            updated without needing to save.</td></tr>
-            <tr><td>Name</td><td>The channel's display name</td></tr>
-            <tr><td>Echo</td><td>The echo command (e.g., <code>/gu</code>)</td></tr>
-            <tr><td>Events</td><td>Number of events defined for this channel</td></tr>
-            <tr><td>Actions</td><td>Edit button (opens the <a href="#edit-channel-gui">channel
-            editor</a>) and Remove button</td></tr>
-        </tbody>
-    </table>
+    <ul>
+        <li><strong>Left pane</strong> (<code>DrawChannelList()</code>) &mdash; a pill list (see
+        <a href="#pill-widgets">Pill widgets</a>) of <strong>Main</strong> plus every channel (the
+        Spam channel stays hidden, as before). A <strong>+ Add</strong> button below the list opens
+        a cursor popup to name and create a new channel. Each row is scoped with
+        <code>ImGui::PushID(id)</code> to avoid ID collisions.</li>
+        <li><strong>Right pane</strong> &mdash; an animated pill tab bar
+        (<code>PillTabBar()</code>) selects what is shown. Selecting <strong>Main</strong> shows a
+        single <em>Settings</em> tab (<code>DrawMainSettingsTab()</code>) holding the Main Echo,
+        Main Font Size, and the global Links toggle &mdash; the three items moved out of the Options
+        menu. Selecting a channel shows a <em>Settings</em> tab
+        (<code>DrawChannelSettingsTab()</code>) and an <em>Events and Filters</em> tab
+        (<code>DrawEventsAndFiltersTab()</code>); the active tab is held in <code>m_settingsTab</code>.</li>
+    </ul>
 
     <div class="note">
-        <strong>Note:</strong> The Spam channel (channel ID 9000) does not appear in either
-        the Config table or the Channels menu. It is toggled via the Options menu in the
-        main window's menu bar instead.
+        <strong>Save vs. Close:</strong> edits mutate <code>engine.settings</code> directly and
+        apply live (font size, Blech re-registration, channel sorting) so the main window
+        reflects them immediately. <strong>Save</strong> persists everything to the
+        <a href="database.html">database</a> (<code>SaveSettings()</code> +
+        <code>SaveCharacterSettings()</code>) and closes the window. <strong>Close</strong>
+        only closes the window &mdash; in-memory changes remain live but are not written to the
+        database.
     </div>
 
-    <h3>Adding a Channel</h3>
+    <h3 id="popup-edit">Click-to-Edit Popups</h3>
 
-    <p>Below the table is an "Add Channel" form with two input fields:</p>
+    <p>Text fields (channel Name, Echo, Main Echo, event Pattern, filter Pattern) use the
+    <code>PopupTextEdit()</code> helper instead of an inline <code>InputText</code>. The field
+    renders as a button showing the current value; clicking it opens a small popup at the mouse
+    cursor with an auto-focused input plus <strong>Accept</strong> / <strong>Cancel</strong>. The
+    popup input auto-sizes to its content (clamped 120&ndash;600&nbsp;px). This avoids the old
+    behavior where every keystroke mutated the live value. Numeric fields (font sizes) remain inline
+    <code>InputInt</code> widgets; toggles and color pickers remain inline.</p>
+
+    <h3 id="pill-widgets">Styled &amp; Animated Widgets (imanim)</h3>
+
+    <p>MQMyChat uses the shared MyUI styled-widget set in <code>Core/Widgets.{h,cpp}</code>
+    (namespace <code>myui</code>), copied verbatim from MQMyUI. These widgets are driven by
+    <strong>imanim</strong> (the animation library compiled into MQ core) and read their colors live
+    from the active theme (<code>ImGuiCol_*</code>), so ThemeZ / DB themes restyle them for free. The
+    plugin owns an imanim context (<code>s_iamCtx</code> in <code>MQMyChat.cpp</code>): it is created
+    once with lazy-init disabled, made current around the render pass in <code>OnUpdateImGui()</code>,
+    and destroyed in <code>ShutdownPlugin()</code>. The host drives imanim's shared clock, so the
+    plugin never calls <code>iam_update_begin_frame()</code> itself.</p>
+
+    <p>This replaced the earlier hand-rolled <code>AnimateFloat</code>/<code>SpringFloat</code>
+    helpers and the member <code>PillSelectable</code>/<code>PillTabBar</code> (a workaround from
+    when native imanim crashed due to an install/ABI skew).</p>
 
     <ul>
-        <li><strong>Name</strong> &mdash; The display name for the new channel</li>
-        <li><strong>Echo</strong> &mdash; The echo command to use</li>
+        <li><code>myui::PillSelectable(label, selected, width)</code> &mdash; a rounded row whose
+        fill alpha tweens toward selected (<code>ImGuiCol_Header</code>) / hover / none. Used for the
+        settings channel and event lists, and for items inside styled combos.</li>
+        <li><code>myui::PillTabBar(id, labels, count, current)</code> &mdash; pills sized to their
+        text with a spring-driven sliding indicator; returns the selected index. Used for the
+        Settings tab bar. The <strong>main chat tab bar stays native
+        <code>ImGui::BeginTabBar</code></strong> so native drag-reorder/close/overflow (and
+        <code>DetectTabReorder</code>) keep working.</li>
+        <li><code>myui::StyledCheckbox</code> &mdash; all option/channel/event/filter checkboxes.</li>
+        <li><code>myui::StyledBeginCombo</code>/<code>StyledEndCombo</code> &mdash; the preset
+        selector and the rename/delete preset combos (pill items given an explicit width so the
+        auto-sizing popup doesn't collapse them).</li>
+        <li><code>myui::BeginAnimatedHeader</code>/<code>EndAnimatedHeader</code> &mdash; the four
+        Preset Manager sections (animated reveal; require a paired <code>End</code> call).</li>
     </ul>
 
-    <p>Clicking <strong>Create</strong> adds the channel to the in-memory list. A
-    <strong>Save All</strong> button persists all changes to the
-    <a href="database.html">database</a>.</p>
+    <h3 id="edit-channel-gui">Channel Settings Tab</h3>
 
-    <h2 id="edit-channel-gui">Edit Channel GUI</h2>
-
-    <p><code>RenderEditChannelGUI()</code> (line 414) opens a dedicated editor for a single
-    channel.</p>
-
-    <pre><code>ImGui::Begin("My Chat - Edit: {name}##MQMyChat_{charName}{id}", ...);</code></pre>
+    <p>The Settings tab for a channel lets you modify:</p>
 
     <ul>
-        <li><strong>First-use size:</strong> 400 x 300 pixels</li>
-    </ul>
-
-    <h3>Channel Settings</h3>
-
-    <p>At the top of the editor, you can modify:</p>
-
-    <ul>
-        <li><strong>Name</strong> &mdash; The channel's display name</li>
-        <li><strong>Echo</strong> &mdash; The echo command</li>
+        <li><strong>Name</strong> &mdash; The channel's display name (popup; committing a change
+        re-sorts the channel list)</li>
+        <li><strong>Echo</strong> &mdash; The echo command (popup)</li>
         <li><strong>Font Size</strong> &mdash; Per-channel font size (independent of the main
         font size)</li>
+        <li><strong>Enabled</strong> &mdash; Whether the channel is active. Toggling calls
+        <code>RefreshBlechEvents()</code> immediately. (This moved here from the old Config
+        table.)</li>
         <li><strong>Main Enable</strong> &mdash; Whether this channel's messages also show in
         the Main tab</li>
         <li><strong>Enable Links</strong> &mdash; Whether clickable item links are active</li>
         <li><strong>PopOut</strong> &mdash; Whether to display this channel in a
         <a href="#popout-windows">separate window</a></li>
+        <li><strong>Locked</strong> &mdash; Whether the pop-out window is locked against move/resize</li>
+        <li><strong>Remove Channel</strong> &mdash; Deletes the channel and re-selects Main</li>
     </ul>
 
-    <h3>Events List</h3>
+    <h3>Events and Filters Tab</h3>
 
-    <p>Below the channel settings is a list of events, each displayed as a
-    <strong>collapsible header</strong> (<code>ImGui::CollapsingHeader</code>). The header
-    shows the event index and a preview of the pattern text (truncated to 40 characters).
-    Click it to expand and see the full event details.</p>
+    <p>This tab is itself a two-pane layout. The left sub-pane has a <strong>+ Add Event</strong>
+    button at the top (opens a cursor popup), followed by the channel's events as
+    <a href="#pill-widgets">pill</a> rows (each label is the pattern truncated to 24 characters). The
+    right sub-pane shows the selected event's details. The currently selected event index is held in
+    the renderer's <code>m_selEventIndex</code> and reset whenever the channel selection changes.</p>
 
-    <p>Each event shows:</p>
+    <p>Each selected event shows:</p>
 
     <ul>
         <li><strong>Enabled</strong> checkbox &mdash; Toggle the event on/off without deleting
@@ -768,22 +788,16 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
     │   │   └─ DrawConsole()
     │   └─ ResetTheme()
     │
-    ├─ RenderConfigGUI() [if open]
+    ├─ RenderSettingsWindow() [if open]
     │   ├─ ApplyTheme()
-    │   ├─ Channel table (Enabled→RefreshBlechEvents, Name, Echo, Events, Actions)
-    │   ├─ Add Channel form
-    │   ├─ Save All button
-    │   └─ ResetTheme()
-    │
-    ├─ RenderEditChannelGUI() [if open]
-    │   ├─ ApplyTheme()
-    │   ├─ Channel settings (Name, Echo, Font Size, etc.)
-    │   ├─ Events list with collapsible headers
-    │   │   ├─ Enabled checkbox → RefreshBlechEvents() on toggle
-    │   │   └─ Filters per event (pattern, color, toggles, reorder arrows)
-    │   ├─ Add Event input
-    │   ├─ Save button → unregister/register Blech events + SaveSettings
-    │   ├─ Close button
+    │   ├─ DrawChannelList() (Main + channels, + Add popup)
+    │   ├─ Right pane tabs for selected channel:
+    │   │   ├─ DrawMainSettingsTab()   (Main: echo, font size, links)
+    │   │   ├─ DrawChannelSettingsTab() (name, echo, font, toggles, remove)
+    │   │   └─ DrawEventsAndFiltersTab() (event list | event detail + filters)
+    │   │       └─ PopupTextEdit() for text fields (Accept/Cancel)
+    │   ├─ Save button → register Blech events + SaveSettings + close
+    │   ├─ Close button (close only, keeps in-memory edits)
     │   └─ ResetTheme()
     │
     └─ RenderPresetManager() [if open]
