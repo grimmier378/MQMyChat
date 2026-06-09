@@ -28,7 +28,6 @@ private:
     void DrawMainSettingsTab(MyChatEngine& engine);
     void DrawChannelSettingsTab(MyChatEngine& engine, ChatChannel& ch);
     void DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& ch);
-    bool PopupTextEdit(const char* id, std::string& value, float width = -1.0f);
 
     std::vector<std::pair<int, float>> m_tabPositions;
     std::vector<int>                   m_lastTabOrder;
@@ -39,9 +38,6 @@ private:
 
     int  m_selEventIndex = -1;
     int  m_settingsTab = 0;
-
-    char m_popupBuf[2048] = {};
-    bool m_popupFocus = false;
 
     char m_presetCopyName[256] = {};
     char m_presetNewName[256] = {};

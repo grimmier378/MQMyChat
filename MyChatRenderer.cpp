@@ -87,10 +87,10 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
 
     if (ImGui::BeginMenuBar())
     {
-        if (ImGui::SmallButton(engine.settings.windowLocked ? ICON_MD_LOCK : ICON_MD_LOCK_OPEN))
+        if (myui::StyledSmallButton(engine.settings.windowLocked ? ICON_MD_LOCK : ICON_MD_LOCK_OPEN))
             engine.settings.windowLocked = !engine.settings.windowLocked;
 
-        if (ImGui::SmallButton(ICON_MD_SETTINGS))
+        if (myui::StyledSmallButton(ICON_MD_SETTINGS))
             engine.showSettingsWindow = !engine.showSettingsWindow;
 
         if (ImGui::BeginMenu("Options"))
@@ -143,7 +143,7 @@ void MyChatRenderer::RenderMainWindow(MyChatEngine& engine)
             ImGui::Text("Theme:");
             engine.settings.themeIdx = ImGuiTheme::DrawThemePicker(engine.settings.themeIdx, "MyChatTheme");
             ImGui::Separator();
-            if (ImGui::Button("Save Settings"))
+            if (myui::StyledButton("Save Settings"))
             {
                 engine.SaveCharacterSettings();
             }
@@ -295,13 +295,13 @@ void MyChatRenderer::RenderPopOutWindows(MyChatEngine& engine)
         ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
         if (ImGui::Begin(winName.c_str(), &open, windowFlags))
         {
-            if (ImGui::SmallButton(ch.locked ? ICON_MD_LOCK : ICON_MD_LOCK_OPEN))
+            if (myui::StyledSmallButton(ch.locked ? ICON_MD_LOCK : ICON_MD_LOCK_OPEN))
             {
                 ch.locked = !ch.locked;
             }
 
             ImGui::SameLine();
-            if (ImGui::SmallButton(ICON_MD_SETTINGS))
+            if (myui::StyledSmallButton(ICON_MD_SETTINGS))
             {
                 engine.settingsChannelId = id;
                 engine.showSettingsWindow = true;
@@ -315,51 +315,6 @@ void MyChatRenderer::RenderPopOutWindows(MyChatEngine& engine)
     }
 
     ImGuiTheme::ResetTheme(oldStyle);
-}
-
-bool MyChatRenderer::PopupTextEdit(const char* id, std::string& value, float width)
-{
-    bool changed = false;
-    ImGui::PushID(id);
-
-    std::string shown = value.empty() ? "<empty>" : value;
-    ImVec2 btnSize(width > 0.0f ? width : 0.0f, 0.0f);
-    if (ImGui::Button(shown.c_str(), btnSize))
-    {
-        strncpy_s(m_popupBuf, value.c_str(), sizeof(m_popupBuf) - 1);
-        ImGui::SetNextWindowPos(ImGui::GetMousePos());
-        ImGui::OpenPopup("##popupedit");
-        m_popupFocus = true;
-    }
-
-    if (ImGui::BeginPopup("##popupedit"))
-    {
-        float fitWidth = ImGui::CalcTextSize(m_popupBuf).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
-        fitWidth = ImClamp(fitWidth, 120.0f, 600.0f);
-        ImGui::SetNextItemWidth(fitWidth);
-        if (m_popupFocus)
-        {
-            ImGui::SetKeyboardFocusHere();
-            m_popupFocus = false;
-        }
-        bool entered = ImGui::InputText("##popupbuf", m_popupBuf, sizeof(m_popupBuf),
-            ImGuiInputTextFlags_EnterReturnsTrue);
-
-        if (ImGui::Button("Accept") || entered)
-        {
-            value = m_popupBuf;
-            changed = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
-    }
-
-    ImGui::PopID();
-    return changed;
 }
 
 void MyChatRenderer::DrawChannelList(MyChatEngine& engine)
@@ -385,39 +340,17 @@ void MyChatRenderer::DrawChannelList(MyChatEngine& engine)
     }
 
     ImGui::Separator();
-    if (ImGui::Button("+ Add", ImVec2(-1.0f, 0.0f)))
-    {
-        m_popupBuf[0] = '\0';
-        ImGui::SetNextWindowPos(ImGui::GetMousePos());
-        ImGui::OpenPopup("##AddChannelPopup");
-        m_popupFocus = true;
-    }
+    if (myui::StyledButton("+ Add", ImVec2(-1.0f, 0.0f)))
+        myui::OpenInputPopup("##AddChannelPopup", "");
 
-    if (ImGui::BeginPopup("##AddChannelPopup"))
+    std::string newChannelName;
+    if (myui::InputPopup("##AddChannelPopup", newChannelName, "Channel name") && !newChannelName.empty())
     {
-        ImGui::SetNextItemWidth(200.0f);
-        if (m_popupFocus)
-        {
-            ImGui::SetKeyboardFocusHere();
-            m_popupFocus = false;
-        }
-        bool entered = ImGui::InputText("##addchname", m_popupBuf, sizeof(m_popupBuf),
-            ImGuiInputTextFlags_EnterReturnsTrue);
-        bool accept = ImGui::Button("Accept") || entered;
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-            ImGui::CloseCurrentPopup();
-
-        if (accept && m_popupBuf[0] != '\0')
-        {
-            int newId = engine.GetNextChannelId();
-            engine.CreateChannel(m_popupBuf, newId);
-            engine.SortChannels();
-            engine.settingsChannelId = newId;
-            m_selEventIndex = -1;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+        int newId = engine.GetNextChannelId();
+        engine.CreateChannel(newChannelName.c_str(), newId);
+        engine.SortChannels();
+        engine.settingsChannelId = newId;
+        m_selEventIndex = -1;
     }
 }
 
@@ -425,7 +358,8 @@ void MyChatRenderer::DrawMainSettingsTab(MyChatEngine& engine)
 {
     ImGui::TextUnformatted("Main Echo:");
     ImGui::SameLine();
-    PopupTextEdit("##MainEcho", engine.settings.mainEcho, 200.0f);
+    ImGui::SetNextItemWidth(200.0f);
+    myui::StyledEditField("##MainEcho", &engine.settings.mainEcho, "<empty>");
 
     ImGui::SetNextItemWidth(120.0f);
     if (ImGui::InputInt("Main Font Size", &engine.settings.mainFontSize))
@@ -445,12 +379,14 @@ void MyChatRenderer::DrawChannelSettingsTab(MyChatEngine& engine, ChatChannel& c
 
     ImGui::TextUnformatted("Name:");
     ImGui::SameLine();
-    if (PopupTextEdit("##ChName", ch.name, 200.0f))
+    ImGui::SetNextItemWidth(200.0f);
+    if (myui::StyledEditField("##ChName", &ch.name, "<empty>"))
         engine.SortChannels();
 
     ImGui::TextUnformatted("Echo:");
     ImGui::SameLine();
-    PopupTextEdit("##ChEcho", ch.echo, 200.0f);
+    ImGui::SetNextItemWidth(200.0f);
+    myui::StyledEditField("##ChEcho", &ch.echo, "<empty>");
 
     ImGui::SetNextItemWidth(120.0f);
     if (ImGui::InputInt("Font Size", &ch.fontSize))
@@ -474,7 +410,7 @@ void MyChatRenderer::DrawChannelSettingsTab(MyChatEngine& engine, ChatChannel& c
 
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
-    bool removed = ImGui::Button("Remove Channel");
+    bool removed = myui::StyledButton("Remove Channel");
     ImGui::PopStyleColor();
     if (removed)
     {
@@ -492,46 +428,24 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
 
     ImGui::BeginChild("##EventListPane", ImVec2(listWidth, 0.0f), true);
 
-    if (ImGui::Button("+ Add Event", ImVec2(-1.0f, 0.0f)))
-    {
-        m_popupBuf[0] = '\0';
-        ImGui::SetNextWindowPos(ImGui::GetMousePos());
-        ImGui::OpenPopup("##AddEventPopup");
-        m_popupFocus = true;
-    }
+    if (myui::StyledButton("+ Add Event", ImVec2(-1.0f, 0.0f)))
+        myui::OpenInputPopup("##AddEventPopup", "");
 
-    if (ImGui::BeginPopup("##AddEventPopup"))
+    std::string newEventString;
+    if (myui::InputPopup("##AddEventPopup", newEventString, "Event pattern") && !newEventString.empty())
     {
-        ImGui::SetNextItemWidth(220.0f);
-        if (m_popupFocus)
+        int newEventIndex = 0;
+        for (const auto& existing : ch.events)
         {
-            ImGui::SetKeyboardFocusHere();
-            m_popupFocus = false;
+            if (existing.eventIndex >= newEventIndex)
+                newEventIndex = existing.eventIndex + 1;
         }
-        bool entered = ImGui::InputText("##addevt", m_popupBuf, sizeof(m_popupBuf),
-            ImGuiInputTextFlags_EnterReturnsTrue);
-        bool accept = ImGui::Button("Accept") || entered;
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-            ImGui::CloseCurrentPopup();
-
-        if (accept && m_popupBuf[0] != '\0')
-        {
-            int newEventIndex = 0;
-            for (const auto& existing : ch.events)
-            {
-                if (existing.eventIndex >= newEventIndex)
-                    newEventIndex = existing.eventIndex + 1;
-            }
-            ChatEvent newEvent;
-            newEvent.eventIndex = newEventIndex;
-            newEvent.eventString = m_popupBuf;
-            ch.events.push_back(newEvent);
-            m_selEventIndex = static_cast<int>(ch.events.size()) - 1;
-            engine.RefreshBlechEvents();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+        ChatEvent newEvent;
+        newEvent.eventIndex = newEventIndex;
+        newEvent.eventString = newEventString;
+        ch.events.push_back(newEvent);
+        m_selEventIndex = static_cast<int>(ch.events.size()) - 1;
+        engine.RefreshBlechEvents();
     }
 
     ImGui::Separator();
@@ -571,12 +485,13 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
         if (myui::StyledCheckbox("Enabled##evt", &evt.enabled))
             engine.RefreshBlechEvents();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Remove Event"))
+        if (myui::StyledSmallButton("Remove Event"))
             eventToRemove = m_selEventIndex;
 
         ImGui::TextUnformatted("Pattern:");
         ImGui::SameLine();
-        if (PopupTextEdit("##evtPattern", evt.eventString, -1.0f))
+        ImGui::SetNextItemWidth(-1.0f);
+        if (myui::StyledEditField("##evtPattern", &evt.eventString, "<empty>"))
             engine.RefreshBlechEvents();
 
         auto& defaultFilt = evt.filters[0];
@@ -597,7 +512,8 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
             auto& flt = evt.filters[fi];
             ImGui::PushID(fi);
 
-            PopupTextEdit("##fltPattern", flt.filterString, 200.0f);
+            ImGui::SetNextItemWidth(200.0f);
+            myui::StyledEditField("##fltPattern", &flt.filterString, "<empty>");
 
             ImGui::SameLine();
             ImVec4 col = flt.color.ToImColor();
@@ -611,13 +527,13 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
             myui::StyledCheckbox("Hidden##flt", &flt.hidden);
 
             ImGui::SameLine();
-            if (ImGui::SmallButton("X##flt"))
+            if (myui::StyledSmallButton("X##flt"))
                 filterToRemove = fi;
 
             if (fi > 1)
             {
                 ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_MD_ARROW_UPWARD "##flt"))
+                if (myui::StyledSmallButton(ICON_MD_ARROW_UPWARD "##flt"))
                 {
                     filterSwapFrom = fi;
                     filterSwapTo = fi - 1;
@@ -627,7 +543,7 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
             if (fi + 1 < static_cast<int>(evt.filters.size()))
             {
                 ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_MD_ARROW_DOWNWARD "##flt"))
+                if (myui::StyledSmallButton(ICON_MD_ARROW_DOWNWARD "##flt"))
                 {
                     filterSwapFrom = fi;
                     filterSwapTo = fi + 1;
@@ -643,7 +559,7 @@ void MyChatRenderer::DrawEventsAndFiltersTab(MyChatEngine& engine, ChatChannel& 
         if (filterToRemove >= 1)
             evt.filters.erase(evt.filters.begin() + filterToRemove);
 
-        if (ImGui::SmallButton("Add Filter"))
+        if (myui::StyledSmallButton("Add Filter"))
             evt.filters.push_back(ChatFilter{});
         if (ImGui::IsItemHovered())
         {
@@ -735,7 +651,7 @@ void MyChatRenderer::RenderSettingsWindow(MyChatEngine& engine)
         ImGui::EndChild();
 
         ImGui::Separator();
-        if (ImGui::Button("Save"))
+        if (myui::StyledButton("Save"))
         {
             engine.UnregisterBlechEvents();
             engine.RegisterBlechEvents();
@@ -746,7 +662,7 @@ void MyChatRenderer::RenderSettingsWindow(MyChatEngine& engine)
             engine.showSettingsWindow = false;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Close"))
+        if (myui::StyledButton("Close"))
             engine.showSettingsWindow = false;
     }
     ImGui::End();
@@ -1061,7 +977,7 @@ void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
         ImGui::SetNextItemWidth(200);
         ImGui::InputText("##CopyName", m_presetCopyName, sizeof(m_presetCopyName));
         ImGui::SameLine();
-        if (ImGui::Button("Copy") && m_presetCopyName[0] != '\0')
+        if (myui::StyledButton("Copy") && m_presetCopyName[0] != '\0')
         {
             engine.SaveCharacterSettings();
             engine.database->SaveSettings(engine.activePresetId, engine.settings);
@@ -1077,7 +993,7 @@ void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
         ImGui::SetNextItemWidth(200);
         ImGui::InputText("##NewBlankName", m_presetNewName, sizeof(m_presetNewName));
         ImGui::SameLine();
-        if (ImGui::Button("Create") && m_presetNewName[0] != '\0')
+        if (myui::StyledButton("Create") && m_presetNewName[0] != '\0')
         {
             int newId = engine.database->CreateBlankPreset(engine.serverName, engine.charName, m_presetNewName);
             if (newId > 0)
@@ -1114,7 +1030,7 @@ void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
             ImGui::SetNextItemWidth(200);
             ImGui::InputText("##RenameInput", m_presetRenameBuf, sizeof(m_presetRenameBuf));
             ImGui::SameLine();
-            if (ImGui::Button("Rename") && m_presetRenameBuf[0] != '\0')
+            if (myui::StyledButton("Rename") && m_presetRenameBuf[0] != '\0')
             {
                 engine.database->RenamePreset(m_renamePresetId, m_presetRenameBuf);
                 engine.database->GetPresetList(engine.serverName, engine.presetList);
@@ -1155,14 +1071,14 @@ void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
         {
             if (!m_confirmDelete)
             {
-                if (ImGui::Button("Delete"))
+                if (myui::StyledButton("Delete"))
                     m_confirmDelete = true;
             }
             else
             {
                 ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Are you sure?");
                 ImGui::SameLine();
-                if (ImGui::Button("Yes, Delete"))
+                if (myui::StyledButton("Yes, Delete"))
                 {
                     engine.database->DeletePreset(m_deletePresetId);
                     engine.database->GetPresetList(engine.serverName, engine.presetList);
@@ -1170,7 +1086,7 @@ void MyChatRenderer::RenderPresetManager(MyChatEngine& engine)
                     m_confirmDelete = false;
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Cancel"))
+                if (myui::StyledButton("Cancel"))
                     m_confirmDelete = false;
             }
         }

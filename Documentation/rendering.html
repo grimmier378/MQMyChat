@@ -441,13 +441,16 @@
 
     <h3 id="popup-edit">Click-to-Edit Popups</h3>
 
-    <p>Text fields (channel Name, Echo, Main Echo, event Pattern, filter Pattern) use the
-    <code>PopupTextEdit()</code> helper instead of an inline <code>InputText</code>. The field
-    renders as a button showing the current value; clicking it opens a small popup at the mouse
-    cursor with an auto-focused input plus <strong>Accept</strong> / <strong>Cancel</strong>. The
-    popup input auto-sizes to its content (clamped 120&ndash;600&nbsp;px). This avoids the old
-    behavior where every keystroke mutated the live value. Numeric fields (font sizes) remain inline
-    <code>InputInt</code> widgets; toggles and color pickers remain inline.</p>
+    <p>Text fields (channel Name, Echo, Main Echo, event Pattern, filter Pattern) use the shared
+    <code>myui::StyledEditField()</code> widget instead of an inline <code>InputText</code>. The field
+    renders as a rounded read-only display of the current value with a pencil affordance; clicking it
+    opens a cursor-anchored popup (<code>myui::InputPopup</code>) with an auto-focused input plus
+    <strong>Accept</strong> / <strong>Cancel</strong>, returning the new value only on accept. Width
+    follows <code>ImGui::SetNextItemWidth</code>; an empty value shows a <code>&lt;empty&gt;</code> hint.
+    This avoids the old behavior where every keystroke mutated the live value. The "+ Add" /
+    "+ Add Event" name prompts use the same <code>myui::OpenInputPopup</code> / <code>InputPopup</code>
+    pair. Numeric fields (font sizes) remain inline <code>InputInt</code> widgets; toggles and color
+    pickers remain inline. (This replaced the former plugin-local <code>PopupTextEdit()</code> helper.)</p>
 
     <h3 id="pill-widgets">Styled &amp; Animated Widgets (imanim)</h3>
 
@@ -795,7 +798,7 @@ ImGuiTheme::ResetTheme(oldStyle);</code></pre>
     │   │   ├─ DrawMainSettingsTab()   (Main: echo, font size, links)
     │   │   ├─ DrawChannelSettingsTab() (name, echo, font, toggles, remove)
     │   │   └─ DrawEventsAndFiltersTab() (event list | event detail + filters)
-    │   │       └─ PopupTextEdit() for text fields (Accept/Cancel)
+    │   │       └─ myui::StyledEditField() for text fields (click → Accept/Cancel popup)
     │   ├─ Save button → register Blech events + SaveSettings + close
     │   ├─ Close button (close only, keeps in-memory edits)
     │   └─ ResetTheme()
