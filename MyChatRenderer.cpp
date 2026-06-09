@@ -410,8 +410,10 @@ void MyChatRenderer::DrawChannelSettingsTab(MyChatEngine& engine, ChatChannel& c
 
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.25f, 0.25f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
     bool removed = myui::StyledButton("Remove Channel");
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(3);
     if (removed)
     {
         engine.settings.channels.erase(ch.channelId);

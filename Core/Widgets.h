@@ -39,6 +39,11 @@ bool AnimationsEnabled();
 // toolbar hover so their glows match. Colors come from the caller (theme-sourced).
 void SoftGlowRoundRect(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float rounding, ImVec4 col, float intensity);
 
+// Tone a bright theme accent down by blending it toward the window background
+// (theme-relative, keeps hue + original alpha). Filled accents (buttons, pills,
+// slider, tabs) use this so they aren't harsh and overlaid text stays readable.
+ImVec4 Soften(const ImVec4& accent);
+
 // --- Reusable animated-control primitives -----------------------------------
 // Theme-neutral building blocks for custom framed/animated controls (used by the
 // styled button + toolbar; available to any host). All honor SetAnimationsEnabled

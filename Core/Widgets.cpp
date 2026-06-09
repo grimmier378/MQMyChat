@@ -95,6 +95,15 @@ bool AnimationsEnabled()
 	return g_animationsEnabled;
 }
 
+ImVec4 Soften(const ImVec4& accent)
+{
+	ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+	bg.w = 1.0f;
+	ImVec4 r = ImLerp(accent, bg, 0.35f);
+	r.w = accent.w;
+	return r;
+}
+
 void SoftGlowRoundRect(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float rounding, ImVec4 col, float intensity)
 {
 	if (intensity <= 0.001f)
@@ -377,10 +386,10 @@ bool RevealCore(const char* label, bool* openPtr, bool headerStyle)
 
 		if (t > 0.02f)
 		{
-			dl->AddRect(pos, cmax, ImGui::GetColorU32(ImGuiCol_Header), radius, ImDrawFlags_RoundCornersAll, 1.5f);
+			dl->AddRect(pos, cmax, ImGui::GetColorU32(Soften(ImGui::GetStyleColorVec4(ImGuiCol_Header))), radius, ImDrawFlags_RoundCornersAll, 1.5f);
 		}
 		const ImDrawFlags hdrCorners = (t < 0.02f) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersTop;
-		ImVec4 hdr = ImGui::GetStyleColorVec4(hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
+		ImVec4 hdr = Soften(ImGui::GetStyleColorVec4(hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header));
 		hdr.w = 1.0f;
 		dl->AddRectFilled(pos, ImVec2(cmax.x, pos.y + rowH), ImGui::GetColorU32(hdr), radius, hdrCorners);
 	}
@@ -479,7 +488,7 @@ int PillTabBar(const char* id, const char* const labels[], int count, int curren
 	const float pillX = AnimFloat(pillId, ImHashStr("x"), positions[sel], style::kTabPillDur, style::TabPillEase(), iam_policy_crossfade, dt, positions[sel]);
 	const float pillW = AnimFloat(pillId, ImHashStr("w"), widths[sel], style::kTabPillDur, style::TabPillEase(), iam_policy_crossfade, dt, widths[sel]);
 
-	ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+	ImVec4 accent = Soften(ImGui::GetStyleColorVec4(ImGuiCol_Header));
 	accent.w = 1.0f;
 	dl->AddRectFilled(ImVec2(pos.x + outer + pillX, pos.y + outer),
 		ImVec2(pos.x + outer + pillX + pillW, pos.y + outer + height),
@@ -535,7 +544,7 @@ bool PillSelectable(const char* label, bool selected, float width)
 	const float rounding = (height * 0.5f) * style::kPillRounding;
 	if (t > 0.001f)
 	{
-		ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+		ImVec4 accent = Soften(ImGui::GetStyleColorVec4(ImGuiCol_Header));
 		accent.w = t;
 		dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(accent), rounding);
 	}
@@ -634,7 +643,7 @@ void DrawAnimatedSlider(ImGuiID id, ImVec2 pos, float w, float h, float trackT, 
 	trackT = ImClamp(trackT, 0.0f, 1.0f);
 	const float thumbX = pos.x + r + trackT * (w - 2.0f * r);
 
-	ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+	ImVec4 accent = Soften(ImGui::GetStyleColorVec4(ImGuiCol_Header));
 	accent.w = 1.0f;
 	const ImU32 accentU = ImGui::GetColorU32(accent);
 
@@ -861,7 +870,7 @@ bool StyledCheckbox(const char* label, bool* v)
 
 	if (fillT > 0.001f)
 	{
-		ImVec4 acc = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+		ImVec4 acc = Soften(ImGui::GetStyleColorVec4(ImGuiCol_Header));
 		acc.w = 1.0f;
 		const float pad = (sz * 0.5f) * (1.0f - fillT);
 		dl->AddRectFilled(ImVec2(bmin.x + pad, bmin.y + pad), ImVec2(bmax.x - pad, bmax.y - pad), ImGui::GetColorU32(acc), rounding);
@@ -973,9 +982,9 @@ bool DrawButtonCore(const char* label, ImVec2 size, int flags, bool smallButton)
 	// reads as a distinct themed widget rather than a stock rectangle.
 	const float rounding = sz.y * 0.5f;
 
-	const ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_Button);
-	const ImVec4 hov  = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
-	const ImVec4 act  = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+	const ImVec4 base = Soften(ImGui::GetStyleColorVec4(ImGuiCol_Button));
+	const ImVec4 hov  = Soften(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
+	const ImVec4 act  = Soften(ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
 
 	// Fill crossfades idle→hover→active (snaps when animations are off). Hover
 	// intensity, press-spring scale and the diagonal sheen are the shared
@@ -1023,7 +1032,7 @@ bool DrawButtonCore(const char* label, ImVec2 size, int flags, bool smallButton)
 	// pill outline reads even on themes whose ImGuiCol_Border is transparent;
 	// it brightens from a soft rest alpha up to full on hover.
 	const float borderSize = ImMax(style.FrameBorderSize, 1.0f);
-	ImVec4 rim = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+	ImVec4 rim = Soften(ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
 	rim.w = 0.40f + 0.60f * ImClamp(hoverI, 0.0f, 1.0f);
 	dl->AddRect(q0, q1, ImGui::GetColorU32(rim), round2, 0, borderSize);
 
@@ -1161,7 +1170,7 @@ bool EditFieldCore(const char* label, const char* current, std::string& out, con
 		ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered), ImClamp(hi, 0.0f, 1.0f));
 	dl->AddRectFilled(p0, p1, ImGui::GetColorU32(bg), rounding);
 
-	ImVec4 rim = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+	ImVec4 rim = Soften(ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
 	rim.w = 0.30f + 0.50f * ImClamp(hi, 0.0f, 1.0f);
 	dl->AddRect(p0, p1, ImGui::GetColorU32(rim), rounding, 0, ImMax(ImGui::GetStyle().FrameBorderSize, 1.0f));
 
