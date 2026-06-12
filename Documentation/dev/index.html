@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQMyChat Dev Docs - Overview</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>MQMyChat Dev Docs</h2>
+    <ul>
+      <li><a href="index.html" class="active">Overview</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="types.html">Types &amp; Constants</a></li>
+      <li><a href="chat-routing.html">Chat Routing</a></li>
+      <li><a href="database.html">Database</a></li>
+      <li><a href="renderer.html">Renderer</a></li>
+      <li><a href="plugin-api.html">Plugin API</a></li>
+      <li><a href="tlo.html">TLO</a></li>
+      <li><a href="building.html">Building</a></li>
+    </ul>
+  </nav>
+
+  <main class="content">
+    <h1>MQMyChat Developer Documentation</h1>
+    <p><em>Last Updated: 2026-06-11</em></p>
+
+    <p>MQMyChat is a native C++ MacroQuest plugin that provides an advanced chat router with Blech pattern matching, SQLite presets, Zep consoles, and a <code>${MyChat}</code> TLO. It maintains cross-compatibility with the original Lua MyChat client through a shared SQLite schema, while adding Lua-JIT-backed filter patterns, an exported C++ ChatAPI for inter-plugin communication, and ImGui-based configuration and visualization.</p>
+
+    <h2>Quick Navigation</h2>
+    <div class="link-grid">
+      <div class="link-card">
+        <h3><a href="architecture.html">Architecture</a></h3>
+        <p>Module map, plugin lifecycle, global state, and imanim context initialization.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="types.html">Types &amp; Constants</a></h3>
+        <p>Data structures: ChatFilter, ChatEvent, ChatChannel, MyChatSettings, PresetInfo, and all constants.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="chat-routing.html">Chat Routing</a></h3>
+        <p>How Blech patterns match to filter chains, token substitution, color assignment, and console output.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="database.html">Database</a></h3>
+        <p>SQLite schema, presets, transaction guards, and the load/save flow for channels and settings.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="renderer.html">Renderer</a></h3>
+        <p>ImGui windows, tabs, popouts, and the myui styled/animated widget set integration.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="plugin-api.html">Plugin API</a></h3>
+        <p>Exported C++ ChatAPI for other plugins to send messages, manage channels, and query state.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="tlo.html">TLO</a></h3>
+        <p>The <code>${MyChat}</code> TLO: Send method, Channel members, and query methods.</p>
+      </div>
+
+      <div class="link-card">
+        <h3><a href="building.html">Building</a></h3>
+        <p>Build configuration, MSBuild command, dependencies, and output DLL loading.</p>
+      </div>
+    </div>
+
+    <h2>Project Links</h2>
+    <ul>
+      <li><strong>Source:</strong> <code>D:\gitStuff\macroquest\plugins\MQMyChat\</code> (own git repo, branch <code>dev</code>)</li>
+      <li><strong>Workspace:</strong> <code>D:\CLAUDE\MQMyChat\</code></li>
+      <li><strong>SQLite Database:</strong> <code>{gPathResources}\MyChat.db</code> (WAL mode)</li>
+      <li><strong>Window Visibility INI:</strong> <code>{gPathConfig}\MQMyChat\{Server}\{CharName}.ini</code></li>
+    </ul>
+
+    <div class="page-nav">
+      <span></span>
+      <a href="architecture.html">Next: Architecture →</a>
+    </div>
+  </main>
+</body>
+</html>

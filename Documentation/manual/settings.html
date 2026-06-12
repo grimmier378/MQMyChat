@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings &amp; Options - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="main-window.html">Main Window</a>
+  <a href="channels-and-events.html">Channels &amp; Events</a>
+  <a href="presets.html">Presets</a>
+  <a href="settings.html" class="active">Settings &amp; Options</a>
+  <a href="commands.html">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Settings &amp; Options</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>All configurable options in MQMyChat. Most live in the <strong>Options</strong> menu of the
+  main window. A few global items (<strong>Main Echo</strong>, <strong>Main Font Size</strong>, and <strong>Links</strong>) are configured
+  in the <a href="#main-settings">Settings window</a> under the <strong>Main</strong> channel entry.</p>
+
+  <h2>Options Menu Reference</h2>
+  <table>
+    <tr><th>Option</th><th>Default</th><th>What It Does</th></tr>
+    <tr>
+      <td><strong>Timestamps</strong></td>
+      <td>On</td>
+      <td>Shows a yellow <code>[HH:MM:SS]</code> timestamp before each message. Existing timestamps from EQ are replaced with a standardized format.</td>
+    </tr>
+    <tr>
+      <td><strong>Local Echo</strong></td>
+      <td>On</td>
+      <td>Shows your typed messages in gray text in the console immediately when you press Enter, so you can see what you sent.</td>
+    </tr>
+    <tr>
+      <td><strong>Auto Scroll</strong></td>
+      <td>On</td>
+      <td>Automatically scrolls the console to the newest message. Turn off if you want to read chat history without being interrupted.</td>
+    </tr>
+    <tr>
+      <td><strong>Log Commands</strong></td>
+      <td>Off</td>
+      <td>Logs commands you type to the MacroQuest output window.</td>
+    </tr>
+    <tr>
+      <td><strong>Spam Channel</strong></td>
+      <td>Off</td>
+      <td>Enables the Spam channel which catches all messages not matched by any other channel. Useful for debugging your event patterns.</td>
+    </tr>
+    <tr>
+      <td><strong>Key Focus</strong></td>
+      <td>Off</td>
+      <td>When enabled, pressing a specific key gives focus to the input box. Configure the key name below this option.</td>
+    </tr>
+    <tr>
+      <td><strong>Focus Key Name</strong></td>
+      <td>RightShift</td>
+      <td>Which key activates input focus. This field appears in the Options menu only after you enable <strong>Key Focus</strong>. Common choices: RightShift, GraveAccent (backtick), Tab.</td>
+    </tr>
+    <tr>
+      <td><strong>Max Buffer Lines</strong></td>
+      <td>5,000</td>
+      <td>Maximum number of lines kept in memory per console (500-50,000). Higher values use more memory but let you scroll back further.</td>
+    </tr>
+    <tr>
+      <td><strong>Theme</strong></td>
+      <td>Default</td>
+      <td>Visual theme for the entire window. See Themes below.</td>
+    </tr>
+    <tr>
+      <td><strong>Save Settings</strong></td>
+      <td>&mdash;</td>
+      <td>Manually saves all current settings. Settings also auto-save when you log out or close the window.</td>
+    </tr>
+  </table>
+
+  <h2 id="main-settings">Main Channel Settings</h2>
+  <p>Click the <strong>gear</strong> button in the main window to open the Settings window, then
+  select <strong>Main</strong> in the channel list on the left. Its <strong>Settings</strong> tab holds these global configuration options:</p>
+  <table>
+    <tr><th>Option</th><th>Default</th><th>What It Does</th></tr>
+    <tr>
+      <td><strong>Main Echo</strong></td>
+      <td>/say</td>
+      <td>The slash command prepended to messages typed in the Main tab. Change to <code>/gu</code> for guild, <code>/raid</code> for raids, <code>/tell</code> for tells, etc. Click the field to edit it in a small popup, then press Accept.</td>
+    </tr>
+    <tr>
+      <td><strong>Main Font Size</strong></td>
+      <td>16</td>
+      <td>Text size in the Main tab (8-48 pixels). Each channel can also have its own independent font size.</td>
+    </tr>
+    <tr>
+      <td><strong>Links</strong></td>
+      <td>Off</td>
+      <td>Enables clickable item links globally (checked = enabled). You can also enable/disable links per channel in the Links menu or on each channel's Settings tab.</td>
+    </tr>
+  </table>
+  <p>Changes in the Settings window apply immediately to the current session, but are only written to disk when you press
+  <strong>Save Settings</strong> (which also closes the window). Use <strong>Close</strong> to exit without saving.</p>
+
+  <h2>Themes</h2>
+  <p>MQMyChat includes 11 visual themes. Select one from the Theme picker in the Options menu.</p>
+  <table>
+    <tr><th>#</th><th>Theme Name</th><th>Description</th></tr>
+    <tr><td>1</td><td>Grape</td><td>Purple/dark tones</td></tr>
+    <tr><td>2</td><td>Red</td><td>Red/orange tones on black</td></tr>
+    <tr><td>3</td><td>Burnt</td><td>Burnt orange tones</td></tr>
+    <tr><td>4</td><td>Monochrome</td><td>Grayscale</td></tr>
+    <tr><td>5</td><td>Lime</td><td>Green accents</td></tr>
+    <tr><td>6</td><td>Night</td><td>Dark theme</td></tr>
+    <tr><td>7</td><td>Cotton Candy</td><td>Pastel tones</td></tr>
+    <tr><td>8</td><td>Black Devil</td><td>High contrast dark</td></tr>
+    <tr><td>9</td><td>Moon Light</td><td>Soft light theme</td></tr>
+    <tr><td>10</td><td>Enemy Mouse</td><td>Custom dark theme</td></tr>
+    <tr><td>11</td><td>Default</td><td>Standard ImGui look</td></tr>
+  </table>
+
+  <div class="tip">
+    Themes are shared with MQMyDPS if you have both plugins loaded &mdash; they use the same theme library.
+  </div>
+
+  <h2>Where Settings Are Stored</h2>
+  <p>MQMyChat stores settings in two places:</p>
+  <ul>
+    <li><strong>Database</strong> &mdash; Channels, events, filters, presets, and most options are stored in a SQLite database in the MacroQuest resources folder. This database is shared with the Lua version of MyChat for cross-compatibility.</li>
+    <li><strong>INI file</strong> &mdash; Window visibility (open/closed) is stored in an INI file per character per server.</li>
+  </ul>
+  <p>Settings save automatically when you log out, switch characters, or close the window. Use the "Save Settings" button in Options for a manual save at any time.</p>
+
+  <h2>Per-Channel Settings</h2>
+  <p>In addition to global options, each channel has its own settings accessible via the Config GUI or channel editor:</p>
+  <table>
+    <tr><th>Setting</th><th>Default</th><th>What It Does</th></tr>
+    <tr><td><strong>Enabled</strong></td><td>On</td><td>Whether this channel processes events</td></tr>
+    <tr><td><strong>Echo</strong></td><td>/say</td><td>Slash command for this channel's input</td></tr>
+    <tr><td><strong>Font Size</strong></td><td>16</td><td>Text size (8-48)</td></tr>
+    <tr><td><strong>Main Enable</strong></td><td>On</td><td>Show this channel's messages in the Main tab</td></tr>
+    <tr><td><strong>Enable Links</strong></td><td>Off</td><td>Clickable item links</td></tr>
+    <tr><td><strong>Pop Out</strong></td><td>Off</td><td>Separate floating window</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="presets.html">&larr; Previous: Presets</a>
+    <a href="commands.html">Next: Commands &amp; TLO &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

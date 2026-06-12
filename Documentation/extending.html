@@ -69,8 +69,12 @@
     <h3>Step 3: Add the Channel INSERT</h3>
 
     <p>Open <strong>MyChatDatabase.cpp</strong> and scroll to the end of
-    <code>SeedDefaultChannels()</code>, just before the <code>ExecSQL("COMMIT")</code> line.
-    Add:</p>
+    <code>SeedDefaultChannels()</code>. The function wraps all its inserts in a RAII
+    <code>TransactionGuard tx(this)</code> and a local <code>bool ok</code> (each
+    <code>run(...)</code> clears <code>ok</code> on failure), then commits with
+    <code>if (ok) { tx.commit(); }</code> at the very end. Add your new
+    <code>run(...)</code> calls alongside the other <code>run(...)</code> statements,
+    before that final <code>if (ok) { tx.commit(); }</code> block. Add:</p>
 
 <pre><code>run(fmt::format(
     "INSERT INTO channels (preset_id, channel_id, name, enabled, echo, "
@@ -285,9 +289,14 @@ if (result.find("N3") != std::string::npos)
         </tbody>
     </table>
 
-    <p>Filter patterns also support Lua string patterns (e.g., <code>%d+%.?$</code> to
-    match numbers at the end of a line). The plugin auto-detects Lua patterns by looking
-    for the <code>%</code> escape character.</p>
+    <p>All filter patterns are matched as Lua string patterns via Lua's
+    <code>string.find</code> (handled by <code>PatternFind()</code> in MQMyChat.cpp), and
+    matching is <strong>case-sensitive</strong>. There is no plain-substring or
+    case-insensitive mode and no <code>%</code>-detection &mdash; a pattern is always
+    treated as a Lua pattern. This means you can use Lua pattern syntax directly (e.g.,
+    <code>%d+%.?$</code> to match numbers at the end of a line), but it also means literal
+    Lua magic characters (<code>. ( ) % + - * ? [ ] ^ $</code>) must be escaped with
+    <code>%</code> to match them verbatim.</p>
 
     <h2>Tutorial 3: Adding a New /mychat Subcommand</h2>
 

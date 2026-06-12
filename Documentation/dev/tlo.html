@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLO - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html" class="active">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>TLO</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+
+  <p>The <code>${MyChat}</code> Top-Level Object provides macro and Lua script access to MQMyChat channel metadata and the Send method. The TLO is purely read-only for member access; only the Send method modifies state (appends text to a channel console).</p>
+
+  <h2>Registration</h2>
+
+  <table>
+    <tr><th>Function</th><th>File:Line</th><th>Purpose</th></tr>
+    <tr><td><code>RegisterMyChatTLO()</code></td><td>MyChatTLO.cpp:194</td><td>Called in <code>InitializePlugin</code>; registers the TLO accessor and type system</td></tr>
+    <tr><td><code>UnregisterMyChatTLO()</code></td><td>MyChatTLO.cpp:201</td><td>Called in <code>ShutdownPlugin</code>; cleans up TLO registration</td></tr>
+  </table>
+
+  <h2>${MyChat} Members</h2>
+
+  <table>
+    <tr><th>Member</th><th>Type</th><th>Access</th><th>Description</th></tr>
+    <tr><td><code>Version</code></td><td>float</td><td>Read</td><td>Plugin version; returns <code>0.1</code> (matches PLUGIN_VERSION)</td></tr>
+    <tr><td><code>Channel</code></td><td>MyChatChannelType</td><td>Read</td><td>Access channel by name (string) or ID (int); returns MyChatChannelType</td></tr>
+    <tr><td><code>ChannelCount</code></td><td>int</td><td>Read</td><td>Number of configured channels in <code>settings.channels</code></td></tr>
+  </table>
+
+  <h2>${MyChat} Methods</h2>
+
+  <table>
+    <tr><th>Method</th><th>Syntax</th><th>Return</th><th>Description</th></tr>
+    <tr>
+      <td><code>Send</code></td>
+      <td><code>${MyChat.Send[channelName,message]}</code></td>
+      <td>bool</td>
+      <td>Sends <code>message</code> to the named channel. Parses index as "channelName,message", splits on first comma, calls <code>g_chatEngine-&gt;SendToChannel()</code>. Returns <code>TRUE</code> on success.</td>
+    </tr>
+  </table>
+
+  <p><strong>Send Implementation:</strong> <code>MyChatType::GetMember()</code> (MyChatTLO.cpp:106-127) detects the <code>Send</code> method, extracts the index string, splits on the first comma to separate channel name and message, then routes through the engine.</p>
+
+  <h2>${MyChat.Channel[...]} Members</h2>
+
+  <p>Access a channel by name or ID: <code>${MyChat.Channel[Combat]}</code> or <code>${MyChat.Channel[2]}</code>. The lookup is defined in <code>MyChatChannelType::GetMember()</code> (MyChatTLO.cpp:7-89).</p>
+
+  <table>
+    <tr><th>Member</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>.Name</code></td><td>string</td><td>Channel display name</td></tr>
+    <tr><td><code>.ID</code></td><td>int</td><td>Channel ID number (1-based)</td></tr>
+    <tr><td><code>.Enabled</code></td><td>bool</td><td>Whether the channel is active/visible</td></tr>
+    <tr><td><code>.TabOrder</code></td><td>int</td><td>Tab position in the main window (rendering order)</td></tr>
+    <tr><td><code>.PopOut</code></td><td>bool</td><td>Whether the channel has a separate pop-out window</td></tr>
+    <tr><td><code>.Echo</code></td><td>string</td><td>Default slash command (e.g., <code>/say</code>, <code>/tell</code>)</td></tr>
+    <tr><td><code>.MainEnable</code></td><td>bool</td><td>Whether the channel appears in the main console</td></tr>
+  </table>
+
+  <p><code>ToString()</code> on a <code>MyChatChannelType</code> instance returns the channel name.</p>
+
+  <h2>Usage Examples</h2>
+
+  <p><strong>Macro:</strong></p>
+
+  <pre><code>/echo ${MyChat.Version}                  --> 0.1
+/echo ${MyChat.ChannelCount}             --> 5
+/echo ${MyChat.Channel[Combat].Name}     --> Combat
+/echo ${MyChat.Channel[Combat].Enabled}  --> TRUE
+/echo ${MyChat.Channel[2].ID}            --> 2
+/echo ${MyChat.Channel[Combat].Echo}     --> /say
+/echo ${MyChat.Send[Combat,Hello World]} --> TRUE</code></pre>
+
+  <p><strong>Lua:</strong></p>
+
+  <pre><code>local version = mq.TLO.MyChat.Version()
+local count = mq.TLO.MyChat.ChannelCount()
+local name = mq.TLO.MyChat.Channel("Combat").Name()
+local enabled = mq.TLO.MyChat.Channel("Combat").Enabled()
+mq.TLO.MyChat.Send("Combat,Hello from Lua")</code></pre>
+
+  <h2>Data Flow</h2>
+
+  <p>All member access is read-only. The TLO reflects current engine state but cannot modify channel settings. Only the Send method modifies state.</p>
+
+  <div class="diagram">Macro/Lua
+│
+├── ${MyChat.Channel[X].Property}  (read-only)
+│   └── MyChatChannelType::GetMember()
+│       └── Iterate g_chatEngine->settings.channels
+│           └── Read ChatChannel struct field
+│               └── Return to caller
+│
+└── ${MyChat.Send[channel,msg]}  (write)
+    └── MyChatType::GetMember() (detects Send method)
+        └── Parse "channel,msg" and call
+            └── g_chatEngine->SendToChannel(name, msg)
+                └── Find/create channel, AppendToConsole()</div>
+
+  <h2>Implementation Details</h2>
+
+  <table>
+    <tr><th>Class</th><th>File:Line</th><th>Purpose</th></tr>
+    <tr><td><code>MyChatChannelType</code></td><td>MyChatTLO.h:5-23 / MyChatTLO.cpp:7-89</td><td>MQ2 type for <code>${MyChat.Channel[...]}</code>; implements <code>GetMember()</code> and <code>ToString()</code></td></tr>
+    <tr><td><code>MyChatType</code></td><td>MyChatTLO.h:25-46 / MyChatTLO.cpp:99-191</td><td>MQ2 type for <code>${MyChat}</code>; implements <code>GetMember()</code>, <code>ToString()</code>, and Send method dispatch</td></tr>
+    <tr><td><code>dataMyChat()</code></td><td>MyChatTLO.cpp:187</td><td>TLO accessor function; returns a <code>MyChatType</code> instance on each call</td></tr>
+  </table>
+
+  <p><code>ToString()</code> on <code>MyChatType</code> returns <code>"MQMyChat"</code>.</p>
+
+  <div class="page-nav">
+    <a href="plugin-api.html">&larr; Plugin API</a>
+    <a href="building.html">Building &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

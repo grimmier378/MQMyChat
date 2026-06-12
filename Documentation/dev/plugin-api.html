@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plugin API - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html" class="active">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Plugin API</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+
+  <p>MQMyChat exports a C++ interface (<code>MyChatAPI.h</code>) so <strong>other native MacroQuest plugins</strong> can route text into MyChat channels and query channel state without going through the macro/Lua TLO layer. The interface is obtained at runtime via MacroQuest's standard <code>GetPluginInterface()</code> mechanism &mdash; the same pattern used by MQ2Nav, MQ2Lua, and other community plugins.</p>
+
+  <div class="note">
+    This is the <strong>C++ plugin-to-plugin</strong> API. For macro/Lua access, see the <a href="tlo.html">TLO</a> page (<code>${MyChat}</code>).
+  </div>
+
+  <h2>Interface Definition</h2>
+
+  <p>The exported interface lives in <code>MyChatAPI.h</code> under namespace <code>mqmychat</code>. The header is dependency-light—only needs <code>&lt;mq/Plugin.h&gt;</code>—so a consuming plugin can copy it into its own tree and include directly. No linking against MQMyChat is required; the interface resolves at runtime.</p>
+
+  <table>
+    <tr><th>Symbol</th><th>File:Line</th><th>Type / Value</th><th>Purpose</th></tr>
+    <tr><td><code>MQMYCHAT_API_VERSION</code></td><td>MyChatAPI.h:10</td><td>constexpr int = <code>1</code></td><td>ABI guard; bump when vtable changes</td></tr>
+    <tr><td><code>MQMYCHAT_DEFAULT_COLOR</code></td><td>MyChatAPI.h:12</td><td>constexpr MQColor = <code>{240,240,240}</code></td><td>Single source of truth for default send color (light grey)</td></tr>
+    <tr><td><code>class ChatAPI : public mq::PluginInterface</code></td><td>MyChatAPI.h:14</td><td>abstract class</td><td>Pure-abstract interface; consumers cast to this</td></tr>
+    <tr><td><code>GetChatAPI()</code></td><td>MyChatAPI.h:34</td><td>inline ChatAPI*</td><td>Wraps <code>mq::GetPluginInterface("MQMyChat")</code>; returns nullptr if not loaded</td></tr>
+  </table>
+
+  <h2>ChatAPI Methods</h2>
+
+  <table>
+    <tr><th>Method</th><th>Signature</th><th>Behavior</th></tr>
+    <tr>
+      <td><code>GetAPIVersion</code></td>
+      <td><code>int GetAPIVersion() const</code></td>
+      <td>Returns <code>MQMYCHAT_API_VERSION</code>. Always call this first to version-guard the interface.</td>
+    </tr>
+    <tr>
+      <td><code>Send</code></td>
+      <td><code>bool Send(std::string_view channel, std::string_view message, MQColor color)</code></td>
+      <td>Routes <code>message</code> to the named channel in the given color. <strong>Auto-creates</strong> the channel if missing (ephemeral, not persisted). Returns <code>true</code> on success, <code>false</code> if engine not ready. Bypasses Blech pattern matching (direct append).</td>
+    </tr>
+    <tr>
+      <td><code>Send</code> (convenience)</td>
+      <td><code>bool Send(std::string_view channel, std::string_view message)</code></td>
+      <td>Non-virtual inline overload; forwards to the three-argument form with <code>MQMYCHAT_DEFAULT_COLOR</code>.</td>
+    </tr>
+    <tr>
+      <td><code>SendToMain</code></td>
+      <td><code>void SendToMain(std::string_view message, MQColor color)</code></td>
+      <td>Appends colored text to the main console; equivalent to <code>Send("main", message, color)</code>.</td>
+    </tr>
+    <tr>
+      <td><code>ChannelExists</code></td>
+      <td><code>bool ChannelExists(std::string_view channel) const</code></td>
+      <td>Case-insensitive existence check across <code>settings.channels</code>. Returns <code>false</code> if engine null.</td>
+    </tr>
+    <tr>
+      <td><code>GetChannelCount</code></td>
+      <td><code>int GetChannelCount() const</code></td>
+      <td>Number of configured channels. Returns 0 if engine null.</td>
+    </tr>
+    <tr>
+      <td><code>IsChannelEnabled</code></td>
+      <td><code>bool IsChannelEnabled(std::string_view channel) const</code></td>
+      <td>Returns the channel's <code>enabled</code> flag; <code>false</code> if channel not found or engine null.</td>
+    </tr>
+    <tr>
+      <td><code>CreateChannel</code></td>
+      <td><code>bool CreateChannel(std::string_view channel)</code></td>
+      <td>Creates an ephemeral channel with the next free ID. Returns <code>false</code> if it already exists or engine not ready.</td>
+    </tr>
+    <tr>
+      <td><code>Clear</code></td>
+      <td><code>void Clear(std::string_view channel)</code></td>
+      <td>Clears a channel's console buffer. Empty string or <code>"main"</code> clears the main console.</td>
+    </tr>
+  </table>
+
+  <h2>Consumer Usage Example</h2>
+
+  <p>Minimal pattern for another plugin sending colored text into a MyChat channel:</p>
+
+  <pre><code>#include "MyChatAPI.h"  // vendored copy
+
+static mqmychat::ChatAPI* s_chat = nullptr;
+
+PLUGIN_API void InitializePlugin()
+{
+    s_chat = mqmychat::GetChatAPI();
+}
+
+void NotifyAlert()
+{
+    if (!s_chat || s_chat->GetAPIVersion() != mqmychat::MQMYCHAT_API_VERSION)
+        return;  // MQMyChat not loaded or built against different API
+
+    // Auto-creates "Alerts" if missing, prints in red.
+    s_chat->Send("Alerts", "Rare spawn incoming!", MQColor(255, 0, 0));
+
+    // Default-color convenience overload.
+    s_chat->Send("Status", "MyPlugin ready");
+
+    // Direct main console output.
+    s_chat->SendToMain("Plugin online");
+}</code></pre>
+
+  <h2>Implementation Map</h2>
+
+  <p>The concrete side lives in <code>MQMyChat.cpp</code>. A single static instance <code>s_chatAPI</code> is handed out by the exported <code>GetPluginInterface()</code> entry point.</p>
+
+  <table>
+    <tr><th>Symbol</th><th>File:Line</th><th>Role</th></tr>
+    <tr><td><code>class ChatAPIImpl : public mqmychat::ChatAPI</code></td><td>MQMyChat.cpp:63</td><td>Concrete implementation; forwards all methods to <code>g_chatEngine</code>. Null-checks engine in every method.</td></tr>
+    <tr><td><code>static ChatAPIImpl s_chatAPI</code></td><td>MQMyChat.cpp:170</td><td>File-static shared instance (created once, stateless besides vtable).</td></tr>
+    <tr><td><code>PLUGIN_API mq::PluginInterface* GetPluginInterface()</code></td><td>MQMyChat.cpp:173</td><td>Exported entry point. Returns <code>&amp;s_chatAPI</code> cast to PluginInterface. MacroQuest's loader auto-wires this for <code>GetPluginInterface("MQMyChat")</code>.</td></tr>
+    <tr><td><code>void SendToChannel(const std::string&amp;, const std::string&amp;, MQColor)</code></td><td>MQMyChat.h / MQMyChat.cpp</td><td>Engine routing call that <code>ChatAPIImpl</code> delegates to. Color parameter defaults to <code>MQMYCHAT_DEFAULT_COLOR</code>.</td></tr>
+  </table>
+
+  <h2>Design Notes</h2>
+
+  <p><strong>Why bypass Blech:</strong> Programmatic output from plugins is already final—it should not be re-pattern-matched, re-filtered, or deduped against the claimed-lines map. The API is a direct console append.</p>
+
+  <p><strong>Why ephemeral channels:</strong> Auto-created channels keep producer-plugin output out of the user's saved presets. A <code>/mychat reload</code> or plugin unload removes them.</p>
+
+  <p><strong>ABI stability:</strong> <code>ChatAPI</code> is pure-abstract. Adding new methods to the <strong>end</strong> of the vtable keeps old consumers binary-compatible. Bump <code>MQMYCHAT_API_VERSION</code> and document the change when the vtable shifts.</p>
+
+  <p><strong>Plugin name:</strong> Always use <code>mq::GetPluginInterface("MQMyChat")</code>; the name must match the DLL base name.</p>
+
+  <div class="page-nav">
+    <a href="renderer.html">&larr; Renderer</a>
+    <a href="tlo.html">TLO &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

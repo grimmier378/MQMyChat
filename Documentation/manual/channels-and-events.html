@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Channels &amp; Events - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="main-window.html">Main Window</a>
+  <a href="channels-and-events.html" class="active">Channels &amp; Events</a>
+  <a href="presets.html">Presets</a>
+  <a href="settings.html">Settings &amp; Options</a>
+  <a href="commands.html">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Channels &amp; Events</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>Channels are the heart of MQMyChat. Each channel watches for specific patterns in your chat and collects matching messages. You control what each channel catches using events and filters.</p>
+
+  <h2>How It Works</h2>
+  <div class="diagram">Incoming Chat Message
+       │
+       ▼
+  Does it match any event pattern?
+       │
+    Yes ▼              No ──▶ Goes to Spam channel (if enabled)
+  Route to channel
+       │
+       ▼
+  Do any filters match?
+       │
+    Yes ▼              No ──▶ Use default event color
+  Apply filter color
+  (or hide if filter is set to hidden)</div>
+
+  <h2>Understanding Events</h2>
+  <p>An <strong>event</strong> is a pattern that tells MQMyChat what text to watch for. When an incoming message matches the pattern, it gets routed to that event's channel.</p>
+
+  <h3>Event Pattern Syntax</h3>
+  <p>Patterns use a simple wildcard system:</p>
+  <table>
+    <tr><th>Pattern</th><th>Meaning</th><th>Example Match</th></tr>
+    <tr><td><code>#*#heals#*#</code></td><td>Any text containing "heals"</td><td>"Soandso heals you for 500 points"</td></tr>
+    <tr><td><code>#*#tells you,#*#</code></td><td>Any text containing "tells you,"</td><td>"Soandso tells you, 'Hello!'"</td></tr>
+    <tr><td><code>#*#slashes#*#</code></td><td>Any text containing "slashes"</td><td>"You slash a gnoll for 200 damage"</td></tr>
+  </table>
+  <p>The <code>#*#</code> means "any text here". So <code>#*#heals#*#</code> matches any message with "heals" anywhere in it.</p>
+
+  <h2>Understanding Filters</h2>
+  <p>A <strong>filter</strong> refines what happens after an event matches. Filters let you:</p>
+  <ul>
+    <li><strong>Color-code</strong> specific messages within a channel</li>
+    <li><strong>Hide</strong> messages you don't want to see</li>
+    <li><strong>Highlight</strong> messages from specific people (your group, your pet, etc.)</li>
+  </ul>
+
+  <h3>How Filters Work</h3>
+  <ul>
+    <li><strong>Filter 0 (Default)</strong> &mdash; Sets the base color for all messages in this event. No pattern matching needed.</li>
+    <li><strong>Filter 1, 2, 3...</strong> &mdash; Conditional filters checked in order. The first one that matches wins.</li>
+    <li>If a conditional filter matches and is marked <strong>Hidden</strong>, the message is discarded entirely.</li>
+    <li>If a conditional filter matches and is not hidden, its color overrides the default.</li>
+  </ul>
+
+  <div class="tip">
+    <strong>Important:</strong> Filters are case-sensitive patterns — match the exact case as it appears in the game. The pattern <code>you say</code> matches only that exact lower-case text, not <code>You say</code>. Use <code>^</code> at the start of a filter to anchor the match to the beginning of the line (e.g., <code>^You</code> matches only lines that start with "You").
+  </div>
+
+  <h3>Filter Tokens</h3>
+  <p>Filters support special tokens that are replaced with actual game values at match time. This lets you create dynamic filters like "highlight messages about my pet" without hardcoding names.</p>
+
+  <table>
+    <tr><th>Token</th><th>Replaced With</th><th>Example Use</th></tr>
+    <tr><td><code>M3</code></td><td>Your character name</td><td>Highlight your own damage in a different color</td></tr>
+    <tr><td><code>PT1</code></td><td>Your pet's name</td><td>Track your pet's combat messages</td></tr>
+    <tr><td><code>PT3</code></td><td>A group member's pet name</td><td>Track group pets</td></tr>
+    <tr><td><code>M1</code></td><td>Main Assist's name</td><td>Highlight MA's target calls</td></tr>
+    <tr><td><code>TK1</code></td><td>Main Tank's name</td><td>Highlight tank's combat messages</td></tr>
+    <tr><td><code>G1</code> - <code>G5</code></td><td>Group member in slot 1-5</td><td>Filter by specific group member</td></tr>
+    <tr><td><code>GP1</code></td><td>Any group member</td><td>Highlight all group combat</td></tr>
+    <tr><td><code>H1</code></td><td>Group healer (Druid, Cleric, Shaman)</td><td>Highlight healer messages</td></tr>
+    <tr><td><code>RL</code></td><td>Raid Leader's name</td><td>Highlight raid leader commands</td></tr>
+    <tr><td><code>P3</code></td><td>Player name from chat line</td><td>Match the person speaking</td></tr>
+    <tr><td><code>N3</code></td><td>NPC name from chat line</td><td>Match the NPC in the message</td></tr>
+    <tr><td><code>NO2</code></td><td>Invert the match (use in front of other tokens)</td><td><code>NO2M3</code> = messages NOT from your character</td></tr>
+  </table>
+
+  <h3>Special Characters in Filters</h3>
+  <p>If your filter contains punctuation or special characters and behaves unexpectedly, you may need to escape them. Use a percent sign <code>%</code> followed by the special character. Here are the most common ones:</p>
+  <table>
+    <tr><th>What You Want to Match</th><th>Write It As</th><th>Example</th></tr>
+    <tr><td>A literal percent sign</td><td><code>%%</code></td><td><code>50%%</code> matches "50%"</td></tr>
+    <tr><td>Parentheses</td><td><code>%(</code> or <code>%)</code></td><td><code>%(Warrior%)</code> matches "(Warrior)"</td></tr>
+    <tr><td>Any digit</td><td><code>%d</code></td><td><code>damage %d+ times</code> matches "damage 5 times"</td></tr>
+    <tr><td>Any letter</td><td><code>%a</code></td><td><code>%a+ heals you</code> matches "Soandso heals you"</td></tr>
+    <tr><td>Any space</td><td><code>%s</code></td><td>Matches whitespace characters</td></tr>
+  </table>
+  <p>In most cases, plain words work fine without any special handling. Only use these escapes if a filter isn't matching the way you expect.</p>
+
+  <h2 id="the-settings-window">The Settings Window</h2>
+  <p>Channels are created and edited in the Settings window. Open it with the <strong>gear</strong>
+  button in the menu bar (or type <code>/mychat config</code>). On the left is a list of every channel plus <strong>Main</strong>; selecting one
+  shows its <strong>Settings</strong> tab and <strong>Events and Filters</strong> tab on the right.</p>
+  <div class="tip">
+    <strong>Editing fields:</strong> Click a text field (name, echo command, a pattern) to open a small inline popup editor. Type the new value and press <strong>Accept</strong> to confirm, or <strong>Cancel</strong> to discard changes. Changes apply immediately to the current session, but are only written to disk when you press
+    <strong>Save Settings</strong> at the bottom, which also closes the window. Use <strong>Close</strong> to exit without saving.
+  </div>
+
+  <h2>Creating a New Channel</h2>
+  <ol>
+    <li>Open the Settings window (gear button, or <code>/mychat config</code>)</li>
+    <li>Click <strong>+ Add</strong> under the channel list</li>
+    <li>Type the channel name in the popup and press <strong>Accept</strong></li>
+    <li>The new channel is selected automatically &mdash; set its Echo on the Settings tab and add events on the Events and Filters tab</li>
+  </ol>
+
+  <h2>Adding Events to a Channel</h2>
+  <ol>
+    <li>Select the channel, then open its <strong>Events and Filters</strong> tab</li>
+    <li>Click <strong>+ Add Event</strong> at the top of the event list, type a pattern (e.g., <code>#*#guild#*#</code>), and press Accept</li>
+    <li>Select the event to edit it &mdash; click <strong>Event Color</strong> to set its default color</li>
+  </ol>
+
+  <h2>Adding Filters to an Event</h2>
+  <ol>
+    <li>On the <strong>Events and Filters</strong> tab, select the event you want to add filters to</li>
+    <li>Below the event's <strong>Event Color</strong> setting, click <strong>Add Filter</strong></li>
+    <li>Click the new filter's pattern field and enter a pattern or token (e.g., <code>M3</code> for your name, or <code>GP1</code> for group members)</li>
+    <li>Click the colored square next to the pattern to pick a color for matching messages</li>
+    <li>Check <strong>On</strong> to enable the filter, <strong>Hidden</strong> to hide matching messages instead of coloring them, and use up/down arrows to reorder filters</li>
+    <li>Click the <strong>X</strong> button to remove a filter</li>
+  </ol>
+
+  <div class="tip">
+    <strong>Example:</strong> To highlight your own damage in green and hide pet damage in the Combat channel:<br>
+    &bull; Add a filter with <code>M3</code> and set it to green<br>
+    &bull; Add a filter with <code>PT1</code> and check Hidden
+  </div>
+
+  <h2>Channel Settings</h2>
+  <p>Each channel has these configurable properties on the <strong>Settings</strong> tab:</p>
+  <table>
+    <tr><th>Setting</th><th>What It Does</th></tr>
+    <tr><td><strong>Name</strong></td><td>The display name shown on the channel's tab</td></tr>
+    <tr><td><strong>Echo</strong></td><td>The slash command used when you type in this channel's input (e.g., /say, /gu, /tell)</td></tr>
+    <tr><td><strong>Font Size</strong></td><td>Text size for this channel (8-48 pixels)</td></tr>
+    <tr><td><strong>Enabled</strong></td><td>Whether the channel's events are active (checked = on)</td></tr>
+    <tr><td><strong>Main Enable</strong></td><td>Whether this channel's messages also appear in the Main tab (checked = yes)</td></tr>
+    <tr><td><strong>Enable Links</strong></td><td>Make item links clickable in this channel (checked = enabled)</td></tr>
+    <tr><td><strong>PopOut</strong></td><td>Open this channel in a separate floating window (checked = floating)</td></tr>
+    <tr><td><strong>Locked</strong></td><td>Lock the pop-out window so it can't be moved or resized (checked = locked)</td></tr>
+    <tr><td><strong>Remove Channel</strong></td><td>Delete this channel entirely (red button at the bottom)</td></tr>
+  </table>
+
+  <h2>Consider Channel</h2>
+  <p>The Consider channel has special behavior: messages are automatically color-coded by mob difficulty level, matching the standard EverQuest consider colors (grey, green, light blue, blue, white, yellow, red). You don't need to set up filters for this &mdash; it happens automatically.</p>
+
+  <h2>Spam Channel</h2>
+  <p>The Spam channel (disabled by default) catches any message that isn't matched by any other channel. Enable it from the Options menu if you want to see "unclaimed" messages. This is useful for debugging your event patterns &mdash; if something shows up in Spam, you know you need to add an event for it.</p>
+
+  <div class="page-nav">
+    <a href="main-window.html">&larr; Previous: Main Window</a>
+    <a href="presets.html">Next: Presets &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

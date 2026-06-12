@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presets - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="main-window.html">Main Window</a>
+  <a href="channels-and-events.html">Channels &amp; Events</a>
+  <a href="presets.html" class="active">Presets</a>
+  <a href="settings.html">Settings &amp; Options</a>
+  <a href="commands.html">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Presets</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>Presets let you save and switch between different channel configurations. This is useful if you want different chat setups for grouping vs. raiding vs. solo play, or if you want to share a configuration across characters.</p>
+
+  <h2>How Presets Work</h2>
+  <ul>
+    <li>A <strong>preset</strong> is a saved collection of channels, events, and filters</li>
+    <li>Presets are stored <strong>per server</strong> &mdash; all characters on the same server share the same preset library</li>
+    <li>Each character has one <strong>active preset</strong> at a time</li>
+    <li>Characters can have <strong>per-character overrides</strong> on top of the active preset (e.g., different channels enabled, different tab order)</li>
+    <li>A "Default" preset is created automatically for each new character</li>
+  </ul>
+
+  <div class="tip">
+    Saving is crash-safe: if a save is interrupted, the preset is left exactly as it was rather than half-written, so your channels and filters can't be corrupted mid-save.
+  </div>
+
+  <h2>Switching Presets</h2>
+  <h3>From the Menu Bar</h3>
+  <ol>
+    <li>Click the <strong>Presets</strong> menu in the menu bar</li>
+    <li>Select a preset from the dropdown</li>
+    <li>Your settings are saved, the new preset loads, and channels update immediately</li>
+  </ol>
+
+  <h3>From the Command Line</h3>
+  <pre><code>/mychat preset MyRaidSetup</code></pre>
+  <p>Switches to the preset named "MyRaidSetup".</p>
+
+  <h2>Managing Presets</h2>
+  <p>Open the Preset Manager by clicking <strong>Manage Presets...</strong> in the Presets menu. The manager has collapsible sections for each operation below.</p>
+
+  <h3>Copy Current Preset</h3>
+  <p>Creates an exact copy of your current settings with a new name. This is the easiest way to create a variant &mdash; copy first, then modify.</p>
+  <ol>
+    <li>In the <strong>Copy Current Preset</strong> section, type a name for the copy in the text field</li>
+    <li>Click <strong>Copy</strong></li>
+    <li>Switch to the new preset and make your changes in the Settings window</li>
+  </ol>
+
+  <h3>Create New Blank Preset</h3>
+  <p>Creates an empty preset with no channels. Useful if you want to build a configuration from scratch.</p>
+  <ol>
+    <li>In the <strong>Create New Blank Preset</strong> section, type a name in the text field</li>
+    <li>Click <strong>Create</strong></li>
+    <li>Switch to it from the Presets dropdown and add channels manually in the Settings window</li>
+  </ol>
+
+  <h3>Rename Preset</h3>
+  <ol>
+    <li>In the <strong>Rename Preset</strong> section, click the dropdown and select the preset to rename</li>
+    <li>Type the new name in the text field</li>
+    <li>Click <strong>Rename</strong></li>
+  </ol>
+
+  <h3>Delete Preset</h3>
+  <ol>
+    <li>In the <strong>Delete Preset</strong> section, click the dropdown and select a preset to delete (you cannot delete the active preset)</li>
+    <li>Click <strong>Delete</strong></li>
+    <li>Confirm the deletion when prompted</li>
+  </ol>
+
+  <div class="warning">
+    Deleting a preset removes all its channels, events, and filters permanently. This cannot be undone.
+  </div>
+
+  <h2>Per-Character Overrides</h2>
+  <p>When multiple characters share the same preset, each character can still customize:</p>
+  <ul>
+    <li>Which channels are enabled/disabled</li>
+    <li>Tab order</li>
+    <li>Pop-out settings</li>
+    <li>Font sizes per channel</li>
+    <li>Echo commands per channel</li>
+    <li>Link settings per channel</li>
+  </ul>
+  <p>These overrides are saved separately from the preset itself, so one character's changes don't affect others using the same preset.</p>
+
+  <h2>Suggested Preset Setups</h2>
+
+  <div class="tip">
+    <strong>Solo/Leveling:</strong> Keep Combat, Loot, Exp, and Consider. Disable Guild and Raid. Enable Spam to catch anything you miss.
+  </div>
+
+  <div class="tip">
+    <strong>Raiding:</strong> Enable Raid, Guild, Combat, Crits. Pop out Tells so you don't miss whispers during busy fights. Increase font size for Combat.
+  </div>
+
+  <div class="tip">
+    <strong>Tradeskill/Crafting:</strong> Disable Combat, Crits. Keep Tells, Guild, OOC. Create a custom "Tradeskill" channel watching for craft-related messages.
+  </div>
+
+  <div class="page-nav">
+    <a href="channels-and-events.html">&larr; Previous: Channels &amp; Events</a>
+    <a href="settings.html">Next: Settings &amp; Options &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

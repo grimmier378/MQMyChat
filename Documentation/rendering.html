@@ -484,6 +484,25 @@
         Preset Manager sections (animated reveal; require a paired <code>End</code> call).</li>
     </ul>
 
+    <div class="note">
+        <strong>Carried in via the MQMyUI sync:</strong> <code>Core/Widgets.{h,cpp}</code> is copied
+        verbatim from MQMyUI, so each sync may bring widgets MQMyChat doesn't itself use. Two recent
+        additions:
+        <ul>
+            <li><strong>DirectionRing family</strong> (<code>myui::DrawDirectionRing</code>,
+            <code>ResolveColorSource</code>, <code>DirectionRingRadius</code>,
+            <code>PushWindowClip</code>, plus the file-scope <code>ColorSource</code> /
+            <code>RingStyle</code> style PODs) &mdash; a circular bearing indicator used by MQMyUI's
+            spawn windows. <strong>Carried but unused</strong> in MQMyChat; it rides along on each
+            sync and is left untouched.</li>
+            <li><strong>Edit-popup owner guard</strong> (<code>g_editPopupOwner</code>) &mdash; tracks
+            which field owns the active <code>StyledEditField</code> / <code>InputPopup</code> so a
+            stale popup can't steal another field's popup. This one is <strong>active</strong> in
+            MQMyChat and hardens its click-to-edit fields (see
+            <a href="#popup-edit">Click-to-Edit Popups</a>).</li>
+        </ul>
+    </div>
+
     <h3 id="edit-channel-gui">Channel Settings Tab</h3>
 
     <p>The Settings tab for a channel lets you modify:</p>

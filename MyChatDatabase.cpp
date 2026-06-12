@@ -39,10 +39,10 @@ void MyChatDatabase::Close()
     }
 }
 
-void MyChatDatabase::ExecSQL(const char* sql)
+bool MyChatDatabase::ExecSQL(const char* sql)
 {
     if (!m_db)
-        return;
+        return false;
 
     char* errMsg = nullptr;
     int rc = sqlite3_exec(m_db, sql, nullptr, nullptr, &errMsg);
@@ -51,7 +51,9 @@ void MyChatDatabase::ExecSQL(const char* sql)
         WriteChatf("\ar[MyChat] SQL error: %s", errMsg ? errMsg : "unknown");
         if (errMsg)
             sqlite3_free(errMsg);
+        return false;
     }
+    return true;
 }
 
 bool MyChatDatabase::PrepareAndStep(const char* sql, sqlite3_stmt*& stmt)
@@ -457,24 +459,40 @@ void MyChatDatabase::LoadSettings(int presetId, MyChatSettings& outSettings)
 
 void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
 {
-    ExecSQL("BEGIN TRANSACTION");
+    TransactionGuard tx(this);
+    bool ok = true;
 
     sqlite3_stmt* stmt = nullptr;
     if (PrepareAndStep("DELETE FROM channels WHERE preset_id=?", stmt))
     {
         sqlite3_bind_int(stmt, 1, presetId);
-        sqlite3_step(stmt);
+        if (sqlite3_step(stmt) != SQLITE_DONE)
+        {
+            ok = false;
+        }
         sqlite3_finalize(stmt);
+    }
+    else
+    {
+        ok = false;
     }
 
     for (const auto& [channelId, chan] : settings.channels)
     {
+        if (!ok)
+        {
+            break;
+        }
+
         stmt = nullptr;
         if (!PrepareAndStep(
             "INSERT INTO channels (preset_id, channel_id, name, enabled, echo, main_enable, "
             "enable_links, pop_out, locked, scale, main_font_size, tab_order) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", stmt))
-            continue;
+        {
+            ok = false;
+            break;
+        }
 
         sqlite3_bind_int(stmt, 1, presetId);
         sqlite3_bind_int(stmt, 2, channelId);
@@ -493,7 +511,8 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
         {
             WriteChatf("\ar[MyChat] Failed to insert channel %d: %s", channelId, sqlite3_errmsg(m_db));
             sqlite3_finalize(stmt);
-            continue;
+            ok = false;
+            break;
         }
         sqlite3_finalize(stmt);
 
@@ -505,7 +524,10 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
             if (!PrepareAndStep(
                 "INSERT INTO events (channel_row_id, event_index, event_string, enabled) "
                 "VALUES (?, ?, ?, ?)", stmt))
-                continue;
+            {
+                ok = false;
+                break;
+            }
 
             sqlite3_bind_int(stmt, 1, chanRowId);
             sqlite3_bind_int(stmt, 2, evt.eventIndex);
@@ -515,7 +537,8 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
             if (sqlite3_step(stmt) != SQLITE_DONE)
             {
                 sqlite3_finalize(stmt);
-                continue;
+                ok = false;
+                break;
             }
             sqlite3_finalize(stmt);
 
@@ -528,7 +551,10 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
                     "INSERT INTO filters (event_row_id, filter_index, filter_string, "
                     "color_r, color_g, color_b, color_a, enabled, hidden) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stmt))
-                    continue;
+                {
+                    ok = false;
+                    break;
+                }
 
                 sqlite3_bind_int(stmt, 1, evtRowId);
                 sqlite3_bind_int(stmt, 2, filt.filterIndex);
@@ -540,21 +566,45 @@ void MyChatDatabase::SaveSettings(int presetId, const MyChatSettings& settings)
                 sqlite3_bind_double(stmt, 7, c.Value.w);
                 sqlite3_bind_int(stmt, 8, filt.enabled ? 1 : 0);
                 sqlite3_bind_int(stmt, 9, filt.hidden ? 1 : 0);
-                sqlite3_step(stmt);
+                if (sqlite3_step(stmt) != SQLITE_DONE)
+                {
+                    ok = false;
+                }
                 sqlite3_finalize(stmt);
+                if (!ok)
+                {
+                    break;
+                }
+            }
+            if (!ok)
+            {
+                break;
             }
         }
     }
 
-    stmt = nullptr;
-    if (PrepareAndStep("UPDATE presets SET updated_at=datetime('now') WHERE id=?", stmt))
+    if (ok)
     {
-        sqlite3_bind_int(stmt, 1, presetId);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stmt = nullptr;
+        if (PrepareAndStep("UPDATE presets SET updated_at=datetime('now') WHERE id=?", stmt))
+        {
+            sqlite3_bind_int(stmt, 1, presetId);
+            if (sqlite3_step(stmt) != SQLITE_DONE)
+            {
+                ok = false;
+            }
+            sqlite3_finalize(stmt);
+        }
+        else
+        {
+            ok = false;
+        }
     }
 
-    ExecSQL("COMMIT");
+    if (ok)
+    {
+        tx.commit();
+    }
 }
 
 void MyChatDatabase::LoadGlobalSettings(const std::string& server, const std::string& charName,
@@ -606,20 +656,27 @@ void MyChatDatabase::LoadGlobalSettings(const std::string& server, const std::st
 void MyChatDatabase::SaveGlobalSettings(const std::string& server, const std::string& charName,
     const MyChatSettings& settings)
 {
+    TransactionGuard tx(this);
+    bool ok = true;
+
     auto saveKV = [&](const char* key, const std::string& value) {
         sqlite3_stmt* stmt = nullptr;
         if (!PrepareAndStep(
             "INSERT OR REPLACE INTO global_settings (char_name, server, key, value) VALUES (?, ?, ?, ?)", stmt))
+        {
+            ok = false;
             return;
+        }
         sqlite3_bind_text(stmt, 1, charName.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, server.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, key, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 4, value.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step(stmt);
+        if (sqlite3_step(stmt) != SQLITE_DONE)
+        {
+            ok = false;
+        }
         sqlite3_finalize(stmt);
     };
-
-    ExecSQL("BEGIN TRANSACTION");
 
     saveKV("locked", settings.windowLocked ? "1" : "0");
     saveKV("timeStamps", settings.timeStamps ? "1" : "0");
@@ -635,7 +692,10 @@ void MyChatDatabase::SaveGlobalSettings(const std::string& server, const std::st
     saveKV("autoScroll", settings.autoScroll ? "1" : "0");
     saveKV("maxBufferLines", fmt::format("{}", settings.maxBufferLines));
 
-    ExecSQL("COMMIT");
+    if (ok)
+    {
+        tx.commit();
+    }
 }
 
 void MyChatDatabase::LoadCharChannelOverrides(const std::string& server, const std::string& charName,
@@ -679,7 +739,8 @@ void MyChatDatabase::LoadCharChannelOverrides(const std::string& server, const s
 void MyChatDatabase::SaveCharChannelOverrides(const std::string& server, const std::string& charName,
     int presetId, const MyChatSettings& settings)
 {
-    ExecSQL("BEGIN TRANSACTION");
+    TransactionGuard tx(this);
+    bool ok = true;
 
     sqlite3_stmt* delStmt = nullptr;
     if (PrepareAndStep(
@@ -688,19 +749,34 @@ void MyChatDatabase::SaveCharChannelOverrides(const std::string& server, const s
         sqlite3_bind_text(delStmt, 1, charName.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(delStmt, 2, server.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(delStmt, 3, presetId);
-        sqlite3_step(delStmt);
+        if (sqlite3_step(delStmt) != SQLITE_DONE)
+        {
+            ok = false;
+        }
         sqlite3_finalize(delStmt);
+    }
+    else
+    {
+        ok = false;
     }
 
     for (const auto& [channelId, chan] : settings.channels)
     {
+        if (!ok)
+        {
+            break;
+        }
+
         sqlite3_stmt* stmt = nullptr;
         if (!PrepareAndStep(
             "INSERT INTO char_channel_overrides "
             "(char_name, server, preset_id, channel_id, enabled, echo, main_enable, "
             "enable_links, pop_out, locked, scale, main_font_size, tab_order) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", stmt))
-            continue;
+        {
+            ok = false;
+            break;
+        }
 
         sqlite3_bind_text(stmt, 1, charName.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, server.c_str(), -1, SQLITE_TRANSIENT);
@@ -715,17 +791,28 @@ void MyChatDatabase::SaveCharChannelOverrides(const std::string& server, const s
         sqlite3_bind_double(stmt, 11, static_cast<double>(chan.scale));
         sqlite3_bind_int(stmt, 12, chan.fontSize);
         sqlite3_bind_int(stmt, 13, chan.tabOrder);
-        sqlite3_step(stmt);
+        if (sqlite3_step(stmt) != SQLITE_DONE)
+        {
+            ok = false;
+        }
         sqlite3_finalize(stmt);
+        if (!ok)
+        {
+            break;
+        }
     }
 
-    ExecSQL("COMMIT");
+    if (ok)
+    {
+        tx.commit();
+    }
 }
 void MyChatDatabase::SeedDefaultChannels(int presetId)
 {
     if (!m_db) return;
-    ExecSQL("BEGIN TRANSACTION");
-    auto run = [&](const std::string& sql) { ExecSQL(sql.c_str()); };
+    TransactionGuard tx(this);
+    bool ok = true;
+    auto run = [&](const std::string& sql) { if (!ExecSQL(sql.c_str())) { ok = false; } };
 
     run(fmt::format("INSERT INTO channels (preset_id, channel_id, name, enabled, echo, main_enable, enable_links, pop_out, locked, scale, main_font_size, tab_order) VALUES ({}, 0, 'Consider', 1, '/say', 1, 0, 0, 0, 1.0, 16, 2)", presetId));
     run(fmt::format("INSERT INTO events (channel_row_id, event_index, event_string, enabled) VALUES ((SELECT id FROM channels WHERE preset_id = {} AND channel_id = 0), 1, '#*#scowls at you, ready to attack --#*#', 1)", presetId));
@@ -934,7 +1021,10 @@ void MyChatDatabase::SeedDefaultChannels(int presetId)
     run(fmt::format("INSERT INTO events (channel_row_id, event_index, event_string, enabled) VALUES ((SELECT id FROM channels WHERE preset_id = {} AND channel_id = 9100), 7, '#*#You have additional information to uncover#*#', 1)", presetId));
     run(fmt::format("INSERT INTO filters (event_row_id, filter_index, filter_string, color_r, color_g, color_b, color_a, enabled, hidden) VALUES ((SELECT e.id FROM events e JOIN channels c ON e.channel_row_id = c.id WHERE c.preset_id = {} AND c.channel_id = 9100 AND e.event_index = 7), 0, '', 1.000000, 0.723804, 0.004651, 1.000000, 1, 0)", presetId));
 
-    ExecSQL("COMMIT");
+    if (ok)
+    {
+        tx.commit();
+    }
     WriteChatf("g[MyChat] Default channels seeded successfully.");
 }
 

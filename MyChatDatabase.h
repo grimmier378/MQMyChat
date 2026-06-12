@@ -38,7 +38,24 @@ public:
     void SeedDefaultChannels(int presetId);
 
 private:
-    void ExecSQL(const char* sql);
+    struct TransactionGuard
+    {
+        MyChatDatabase* db;
+        bool committed = false;
+        explicit TransactionGuard(MyChatDatabase* owner) : db(owner) { db->ExecSQL("BEGIN TRANSACTION"); }
+        ~TransactionGuard()
+        {
+            if (!committed && db && db->m_db)
+            {
+                db->ExecSQL("ROLLBACK");
+            }
+        }
+        void commit() { committed = db->ExecSQL("COMMIT"); }
+        TransactionGuard(const TransactionGuard&) = delete;
+        TransactionGuard& operator=(const TransactionGuard&) = delete;
+    };
+
+    bool ExecSQL(const char* sql);
     bool PrepareAndStep(const char* sql, sqlite3_stmt*& stmt);
     int  GetSchemaVersion();
     void SetSchemaVersion(int version);

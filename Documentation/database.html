@@ -25,7 +25,7 @@
 <main class="content">
     <h1>Database &amp; Settings</h1>
 
-    <p><em>Last Updated: 2026-04-24</em></p>
+    <p><em>Last Updated: 2026-06-12</em></p>
 
     <p>MQMyChat stores all of its configuration &mdash; channels, events, filters, presets,
     and per-character settings &mdash; in a single SQLite database file. This page walks you
@@ -491,6 +491,24 @@ CREATE INDEX IF NOT EXISTS idx_char_channel_overrides_lookup
         not yet re-inserted).
     </div>
 
+    <p>The transaction is managed by a private RAII guard, <code>MyChatDatabase::TransactionGuard</code>
+    (declared in <code>MyChatDatabase.h</code>). Its constructor runs <code>BEGIN TRANSACTION</code>
+    and its destructor runs <code>ROLLBACK</code> <em>unless</em> <code>commit()</code> was called first.
+    Each transactional write declares a local <code>TransactionGuard tx(this);</code> alongside a
+    <code>bool ok</code> flag. The flag is set to <code>false</code> on any prepare, step, or
+    <code>ExecSQL</code> failure, and <code>tx.commit()</code> is only invoked when every statement
+    succeeds. If the function returns early or the flag is left <code>false</code>, the guard's
+    destructor rolls the whole batch back automatically &mdash; even on an unhandled exception.</p>
+
+    <div class="tip">
+        <strong>Rollback safety.</strong> Because <code>SaveSettings()</code> deletes all of a
+        preset's channels before re-inserting them, a mid-save failure could previously leave the
+        preset half-rebuilt. With the guard in place, a failed delete-and-reinsert rolls back
+        entirely, so the preset is either fully updated or left exactly as it was. <code>ExecSQL</code>
+        now returns a <code>bool</code> (success) instead of <code>void</code>, which is how the guard
+        and the <code>ok</code> flag detect failures.
+    </div>
+
     <pre><code>BEGIN TRANSACTION;
 -- Delete all existing channels for this preset (CASCADE removes events and filters too)
 -- Re-insert all channels, events, and filters from memory
@@ -506,6 +524,11 @@ COMMIT;</code></pre>
     <p>After re-inserting all channels, the save also updates the preset's
     <code>updated_at</code> timestamp so you can see when a preset was last modified.</p>
 
+    <p>The same <code>TransactionGuard</code> + <code>ok</code>-flag pattern protects all four
+    transactional writes: <code>SaveSettings()</code>, <code>SaveGlobalSettings()</code>,
+    <code>SaveCharChannelOverrides()</code>, and <code>SeedDefaultChannels()</code>. Each one
+    commits only on full success and otherwise rolls back.</p>
+
     <h3>Global Settings</h3>
 
     <p><code>LoadGlobalSettings()</code> and <code>SaveGlobalSettings()</code> handle the
@@ -514,8 +537,9 @@ COMMIT;</code></pre>
 
     <p>Saving uses an <strong>upsert</strong> strategy (<code>INSERT OR REPLACE</code>): if a
     key already exists for this character, its value is overwritten; if it does not exist yet,
-    a new row is created. The entire batch of key-value writes is wrapped in a transaction for
-    performance and safety.</p>
+    a new row is created. The entire batch of key-value writes is wrapped in a
+    <code>TransactionGuard</code> for performance and safety, committing only if every upsert
+    succeeds and rolling back otherwise.</p>
 
     <h2>Default Channel Seeding</h2>
 

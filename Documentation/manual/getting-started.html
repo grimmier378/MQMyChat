@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html" class="active">Getting Started</a>
+  <a href="main-window.html">Main Window</a>
+  <a href="channels-and-events.html">Channels &amp; Events</a>
+  <a href="presets.html">Presets</a>
+  <a href="settings.html">Settings &amp; Options</a>
+  <a href="commands.html">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Getting Started</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+
+  <h2>Loading the Plugin</h2>
+  <ol>
+    <li>Make sure <code>MQMyChat.dll</code> is in your MacroQuest plugins folder</li>
+    <li>In EverQuest, type: <code>/plugin MQMyChat</code></li>
+    <li>The plugin loads and creates its database automatically</li>
+    <li>Type <code>/mychat show</code> to open the chat window</li>
+  </ol>
+
+  <div class="tip">
+    To auto-load MQMyChat every time you start MacroQuest, add <code>MQMyChat</code> to your plugin list in the MacroQuest configuration.
+  </div>
+
+  <h2>First Run</h2>
+  <p>When you log in for the first time, MQMyChat automatically:</p>
+  <ul>
+    <li>Creates a "Default" preset for your character</li>
+    <li>Populates 14 pre-configured channels</li>
+    <li>Starts routing chat to the appropriate channels</li>
+  </ul>
+  <p>You don't need to configure anything to get started &mdash; just open the window and your chat will already be sorted.</p>
+
+  <h2>Default Channels</h2>
+  <p>These channels come pre-configured for every new character:</p>
+
+  <table>
+    <tr><th>Channel</th><th>What It Shows</th></tr>
+    <tr><td><strong>NPC</strong></td><td>NPC dialog &mdash; quest text, vendor messages, and NPC speech</td></tr>
+    <tr><td><strong>Consider</strong></td><td>Con messages when you consider a mob &mdash; color-coded by difficulty (grey, green, blue, yellow, red, etc.)</td></tr>
+    <tr><td><strong>Combat</strong></td><td>Melee and spell damage, healing, misses, and combat-related messages</td></tr>
+    <tr><td><strong>Crits</strong></td><td>Critical hits, assassinations, finishing blows, crippling blows, and other special combat effects</td></tr>
+    <tr><td><strong>Loot</strong></td><td>Item drops, looting messages, and corpse notifications</td></tr>
+    <tr><td><strong>Faction</strong></td><td>Faction standing changes</td></tr>
+    <tr><td><strong>OOC</strong></td><td>Out of character chat and server announcements</td></tr>
+    <tr><td><strong>Shout</strong></td><td>Shout channel messages</td></tr>
+    <tr><td><strong>Tells</strong></td><td>Incoming and outgoing tells (whispers)</td></tr>
+    <tr><td><strong>Exp AA pts</strong></td><td>Experience and AA point gains</td></tr>
+    <tr><td><strong>Guild</strong></td><td>Guild chat messages</td></tr>
+    <tr><td><strong>Raid</strong></td><td>Raid chat messages</td></tr>
+    <tr><td><strong>Say</strong></td><td>Local /say messages</td></tr>
+    <tr><td><strong>Spam</strong></td><td>Everything not caught by another channel (disabled by default)</td></tr>
+  </table>
+
+  <div class="note">
+    The <strong>Spam</strong> channel is disabled by default. Enable it from the Options menu if you want to see messages that aren't matched by any other channel.
+  </div>
+
+  <h2>Basic Navigation</h2>
+  <ul>
+    <li><strong>Click tabs</strong> to switch between channels</li>
+    <li>The <strong>Main</strong> tab shows messages from all channels that have "main enable" turned on</li>
+    <li><strong>Drag tabs</strong> to reorder them (order saves automatically after 3 seconds)</li>
+    <li><strong>Right-click a tab</strong> to edit, pop out, or delete that channel</li>
+    <li><strong>Type in the input box</strong> at the bottom and press <kbd>Enter</kbd> to send a message</li>
+    <li>Press <kbd>Up</kbd>/<kbd>Down</kbd> arrows to scroll through your command history</li>
+  </ul>
+
+  <h2>Per-Character Settings</h2>
+  <p>MQMyChat saves settings separately for each character on each server. When you log into a different character, their settings load automatically. This means:</p>
+  <ul>
+    <li>Each character can have different channels enabled/disabled</li>
+    <li>Window position and size are remembered per character</li>
+    <li>Font sizes, themes, and other options are per character</li>
+    <li>Presets are per server &mdash; all characters on the same server share the same preset library</li>
+  </ul>
+
+  <div class="page-nav">
+    <a href="index.html">&larr; Previous: Welcome</a>
+    <a href="main-window.html">Next: Main Window &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

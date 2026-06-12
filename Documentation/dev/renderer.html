@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Renderer - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html" class="active">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Renderer</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>ImGui rendering for MQMyChat: main window with native tab bar, pop-out windows, settings window with channel list and events/filters editor, preset manager, theme system, styled widgets.</p>
+
+  <h2>Entry Point</h2>
+  <p><code>OnUpdateImGui()</code> (MQMyChat.cpp) calls renderer methods on <code>s_renderer</code>:</p>
+  <ol>
+    <li><code>RenderMainWindow(*g_chatEngine)</code></li>
+    <li><code>RenderPopOutWindows(*g_chatEngine)</code></li>
+    <li><code>RenderSettingsWindow(*g_chatEngine)</code> if showSettingsWindow</li>
+    <li><code>RenderPresetManager(*g_chatEngine)</code> if showPresetManager</li>
+  </ol>
+  <p>Before the render calls, <code>OnUpdateImGui()</code> makes the plugin-owned <strong>imanim</strong> context current (and creates it on first use with lazy-init disabled); it restores the previous context afterward. The context is destroyed in <code>ShutdownPlugin()</code>.</p>
+
+  <h2>Main Window</h2>
+  <p><code>RenderMainWindow()</code> (<code>MyChatRenderer.cpp:68</code>):</p>
+  <ul>
+    <li>Window title: <code>"My Chat - Main##MQMyChat_{charName}"</code></li>
+    <li>Theme applied via <code>ImGuiTheme::ApplyTheme(settings.themeIdx)</code> (line 72)</li>
+    <li>Lock flag controls ImGui window flags (no move/resize when locked)</li>
+  </ul>
+
+  <h3>Menu Bar</h3>
+  <table>
+    <tr><th>Menu</th><th>Contents</th></tr>
+    <tr><td>Lock</td><td>Toggle <code>settings.windowLocked</code></td></tr>
+    <tr><td>Settings</td><td>Toggle <code>showConfigGUI</code></td></tr>
+    <tr><td>Options</td><td>timeStamps, doLinks, localEcho, autoScroll, logCommands, spam toggle, key focus + keyName, mainEcho, mainFontSize (8-48), maxBufferLines (500-50000), theme picker, Save button</td></tr>
+    <tr><td>Channels</td><td>Checkboxes per channel enabled/disabled &rarr; <code>RefreshBlechEvents()</code></td></tr>
+    <tr><td>Links</td><td>Checkboxes per channel enableLinks</td></tr>
+    <tr><td>PopOut</td><td>Checkboxes per channel popOut</td></tr>
+    <tr><td>Presets</td><td>Combo selector, Save As, Copy, Rename, Delete buttons</td></tr>
+  </table>
+
+  <h3>Tab Bar</h3>
+  <ul>
+    <li>Tabs ordered by <code>sortedChannels</code> (sorted by tabOrder then name)</li>
+    <li>First tab: "Main" console (<code>DrawMainConsole</code>)</li>
+    <li>Remaining tabs: one per enabled channel (<code>DrawConsole</code>)</li>
+    <li>Tab reordering detected via <code>DetectTabReorder()</code> (<code>MyChatRenderer.cpp:933</code>)</li>
+    <li>Tab order persisted after <code>TAB_ORDER_SAVE_INTERVAL</code> (3s) debounce via <code>FlushTabOrder()</code> (<code>MyChatRenderer.cpp:954</code>)</li>
+    <li>Right-click context menu: Edit, Pop Out, Delete</li>
+  </ul>
+
+  <h2>Pop-Out Windows</h2>
+  <p><code>RenderPopOutWindows()</code> (<code>MyChatRenderer.cpp:279</code>):</p>
+  <ul>
+    <li>For each channel with <code>popOut=true</code>: creates separate ImGui window</li>
+    <li>Window title: <code>"{channelName}##MQMyChat_PopOut_{channelId}"</code></li>
+    <li>Contains same console + input as main window tab</li>
+  </ul>
+
+  <h2>Console Rendering</h2>
+
+  <h3>DrawConsole (<code>MyChatRenderer.cpp:675</code>)</h3>
+  <ol>
+    <li>Check focus key via <code>CheckFocusKey()</code> (<code>MyChatRenderer.cpp:56</code>)</li>
+    <li>Render ConsoleWidget (Zep editor backend)</li>
+    <li>Text input field for slash commands</li>
+    <li>On Enter: sends command to <code>pLocalPlayer->chatqueue</code></li>
+    <li>Command history via up/down arrows (<code>TextEditCallback</code>, <code>MyChatRenderer.cpp:897</code>)</li>
+    <li>LocalEcho: appends input to console if <code>settings.localEcho</code> enabled</li>
+  </ol>
+
+  <h3>DrawMainConsole (<code>MyChatRenderer.cpp:776</code>)</h3>
+  <p>Same as DrawConsole but uses <code>engine.mainConsole</code>.</p>
+
+  <h2>Settings Window</h2>
+  <p><code>RenderSettingsWindow()</code> (<code>MyChatRenderer.cpp:606</code>):</p>
+  <ul>
+    <li>Window title: <code>"My Chat - Settings##MQMyChat_{charName}"</code></li>
+    <li>Left pane (180px): Channel list using <code>DrawChannelList()</code> (<code>MyChatRenderer.cpp:320</code>)
+      <ul>
+        <li>Pills showing all channels (main + user channels)</li>
+        <li>"+ Add" button for creating new channels</li>
+      </ul>
+    </li>
+    <li>Right pane: Tab bar with "Settings" and optionally "Events and Filters"
+      <ul>
+        <li>If Main channel selected: "Settings" tab only via <code>DrawMainSettingsTab()</code> (<code>MyChatRenderer.cpp:357</code>)</li>
+        <li>If channel selected: "Settings" and "Events and Filters" tabs via <code>DrawChannelSettingsTab()</code> (<code>MyChatRenderer.cpp:375</code>) and <code>DrawEventsAndFiltersTab()</code> (<code>MyChatRenderer.cpp:426</code>)</li>
+      </ul>
+    </li>
+    <li>Bottom buttons: "Save" (triggers UnregisterBlechEvents/RegisterBlechEvents/SaveSettings) and "Close"</li>
+    <li>Theme applied via <code>ImGuiTheme::ApplyTheme(settings.themeIdx)</code> (line 611)</li>
+  </ul>
+
+  <h3>DrawMainSettingsTab (<code>MyChatRenderer.cpp:357</code>)</h3>
+  <p>Main console settings:</p>
+  <ul>
+    <li>Text input for mainEcho command</li>
+    <li>Slider for main font size (8-48)</li>
+    <li>Checkbox for Links</li>
+  </ul>
+
+  <h3>DrawChannelSettingsTab (<code>MyChatRenderer.cpp:375</code>)</h3>
+  <p>Per-channel settings:</p>
+  <ul>
+    <li>Channel ID (read-only)</li>
+    <li>Channel name (text input; triggers SortChannels on change)</li>
+    <li>Echo command (text input, <code>StyledEditField</code>)</li>
+    <li>Font size slider (8-48)</li>
+    <li>Checkboxes: mainEnable, enableLinks</li>
+  </ul>
+
+  <h3>DrawEventsAndFiltersTab (<code>MyChatRenderer.cpp:426</code>)</h3>
+  <p>Events and filters editor:</p>
+  <ul>
+    <li>Event list with enable/disable toggles</li>
+    <li>"+ Add Event" button (opens input popup)</li>
+    <li>Edit event string (text input, <code>StyledEditField</code>)</li>
+    <li>Filters table for selected event:
+      <ul>
+        <li>Filter index, pattern string, color picker, hidden/enabled toggles</li>
+        <li>"+ Add Filter" button</li>
+        <li>Delete buttons for each filter</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2>Preset Manager</h2>
+  <p><code>RenderPresetManager()</code> (<code>MyChatRenderer.cpp:968</code>):</p>
+  <ul>
+    <li>Window title: <code>"Preset Manager##MyChat"</code></li>
+    <li>Four collapsible animated sections via <code>BeginAnimatedHeader</code> / <code>EndAnimatedHeader</code>:
+      <ol>
+        <li><strong>Copy Current Preset</strong> (lines 977-991): Input text for copy name, "Copy" button</li>
+        <li><strong>Create New Blank Preset</strong> (lines 993-1006): Input text for new name, "Create" button</li>
+        <li><strong>Rename Preset</strong> (lines 1008-1046): Combo to select preset, text input, "Rename" button</li>
+        <li><strong>Delete Preset</strong> (lines 1048-1096): Combo to select preset (excludes active preset), two-step confirmation</li>
+      </ol>
+    </li>
+    <li>Styled combos with <code>PillSelectable</code> pills (200px width)</li>
+  </ul>
+
+  <h2>Focus Key System</h2>
+  <p><code>CheckFocusKey()</code> (<code>MyChatRenderer.cpp:56</code>):</p>
+  <ul>
+    <li>If <code>settings.keyFocus</code> enabled and configured key pressed</li>
+    <li><code>GetImGuiKeyByName(settings.keyName)</code> converts string to ImGuiKey (line 19)</li>
+    <li>Sets input focus to current console's text input</li>
+  </ul>
+
+  <h2>Theme System</h2>
+  <p>11 themes defined in <code>Theme.h</code> (shared with MQMyDPS), <code>ThemeNames</code> vector at <code>Theme.h:774</code>:</p>
+  <table>
+    <tr><th>Index</th><th>Name</th></tr>
+    <tr><td>0</td><td>Grape</td></tr>
+    <tr><td>1</td><td>Red</td></tr>
+    <tr><td>2</td><td>Burnt</td></tr>
+    <tr><td>3</td><td>Monochrome</td></tr>
+    <tr><td>4</td><td>Lime</td></tr>
+    <tr><td>5</td><td>Night</td></tr>
+    <tr><td>6</td><td>Cotton Candy</td></tr>
+    <tr><td>7</td><td>Black Devil</td></tr>
+    <tr><td>8</td><td>Moon Light</td></tr>
+    <tr><td>9</td><td>Enemy Mouse</td></tr>
+    <tr><td>10</td><td>Default</td></tr>
+  </table>
+
+  <p>Default <code>themeIdx</code> is 10 (Default). Style constants: FrameRounding=9, GrabRounding=12, PopupRounding=10, ScrollbarRounding=12, TabRounding=10, WindowRounding=10, ChildRounding=8.</p>
+
+  <p>Applied via <code>ImGuiTheme::ApplyTheme(index)</code>, reset via <code>ImGuiTheme::ResetTheme()</code>.</p>
+
+  <h2>Styled &amp; Animated Widgets (imanim)</h2>
+  <p>MQMyChat uses the shared MyUI styled-widget set in <code>Core/Widgets.{h,cpp}</code> (namespace <code>myui</code>), copied verbatim from MQMyUI. These are imanim-driven, theme-colored (<code>ImGuiCol_*</code>) replacements for stock ImGui chrome — pill tabs/lists, animated checkboxes, styled combos, animated collapsing headers, sliders, and a motion toggle.</p>
+
+  <h3>Where they are used</h3>
+  <ul>
+    <li><code>myui::PillTabBar</code> — the Settings window tab bar (<code>RenderSettingsWindow</code>). The <strong>main chat tab bar is intentionally still native <code>ImGui::BeginTabBar</code></strong> — <code>DetectTabReorder</code>/<code>FlushTabOrder</code> depend on native drag-reorder, close, and overflow that the pill bar does not replicate.</li>
+    <li><code>myui::PillSelectable</code> — the settings channel/event lists, and the items inside styled combos (passed an explicit width so the auto-sizing combo popup doesn't collapse them to a sliver).</li>
+    <li><code>myui::StyledCheckbox</code> — all option/channel/event/filter checkboxes (menus and settings tabs).</li>
+    <li><code>myui::StyledBeginCombo</code>/<code>StyledEndCombo</code> — the preset selector (Presets menu) and the rename/delete preset combos in the Preset Manager.</li>
+    <li><code>myui::BeginAnimatedHeader</code>/<code>EndAnimatedHeader</code> — the four Preset Manager sections (Copy / Create / Rename / Delete). Unlike <code>CollapsingHeader</code>, these require a paired <code>End*</code> call.</li>
+  </ul>
+
+  <h3>imanim wiring (MQMyChat.cpp)</h3>
+  <ul>
+    <li><code>static iam_context* s_iamCtx</code> — plugin-owned context.</li>
+    <li><code>OnUpdateImGui()</code>: create once with <code>iam_set_lazy_init(false)</code>, <code>iam_context_set_current</code> around the render pass, restore the previous context. <strong>Never</strong> calls <code>iam_update_begin_frame()</code> (the host drives the shared clock; calling it would double the animation speed).</li>
+    <li><code>ShutdownPlugin()</code>: <code>iam_context_destroy(s_iamCtx)</code> (mandatory — a dangling context entry crashes the host's next frame).</li>
+  </ul>
+
+  <div class="note">The earlier hand-rolled <code>AnimateFloat</code>/<code>SpringFloat</code> helpers and the member <code>MyChatRenderer::PillSelectable</code>/<code>PillTabBar</code> (the original workaround for an install/ABI-skew imanim crash) have been <strong>removed</strong> in favor of this shared set.</div>
+
+  <h3>Carried but unused</h3>
+  <p><code>Core/Widgets</code> is synced verbatim from MQMyUI, so it also ships the <strong>DirectionRing</strong> family (<code>myui::DrawDirectionRing</code>, <code>ResolveColorSource</code>, <code>DirectionRingRadius</code>, <code>PushWindowClip</code>, and the file-scope <code>ColorSource</code>/<code>RingStyle</code> PODs) and the edit-popup <strong>owner guard</strong> (<code>g_editPopupOwner</code>, which keeps a stale <code>StyledEditField</code>/<code>InputPopup</code> from stealing another field's popup). MQMyChat does not draw the ring (no spawn-bearing UI), but the code compiles in and rides along on each sync.</p>
+
+  <h2>Renderer State</h2>
+  <table>
+    <tr><th>Member</th><th>Type</th><th>Purpose</th></tr>
+    <tr><td><code>m_tabPositions</code></td><td>vector&lt;pair&lt;int,float&gt;&gt;</td><td>Tab positions for reorder detection (cleared each frame in RenderMainWindow line 229)</td></tr>
+    <tr><td><code>m_lastTabOrder</code></td><td>vector&lt;int&gt;</td><td>Previous tab order for change detection</td></tr>
+    <tr><td><code>m_tabOrderDirty</code></td><td>bool</td><td>Pending tab order save</td></tr>
+    <tr><td><code>m_tabOrderLastSave</code></td><td>steady_clock::time_point</td><td>Last tab order save time</td></tr>
+    <tr><td><code>m_setFocus</code></td><td>bool</td><td>Pending input focus</td></tr>
+    <tr><td><code>m_settingsTab</code></td><td>int</td><td>Settings window tab selector (0=Settings, 1=Events and Filters)</td></tr>
+    <tr><td><code>m_selEventIndex</code></td><td>int</td><td>Currently selected event index</td></tr>
+    <tr><td><code>m_presetCopyName[256]</code></td><td>char</td><td>Copy preset name input buffer</td></tr>
+    <tr><td><code>m_presetNewName[256]</code></td><td>char</td><td>Create blank preset name input buffer</td></tr>
+    <tr><td><code>m_presetRenameBuf[256]</code></td><td>char</td><td>Rename preset name input buffer</td></tr>
+    <tr><td><code>m_renamePresetId</code></td><td>int</td><td>Preset ID being renamed (-1=none)</td></tr>
+    <tr><td><code>m_deletePresetId</code></td><td>int</td><td>Preset ID being deleted (-1=none)</td></tr>
+    <tr><td><code>m_confirmDelete</code></td><td>bool</td><td>Delete confirmation state (two-step confirm)</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="database.html">&larr; Database</a>
+    <span> | </span>
+    <a href="plugin-api.html">Plugin API &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

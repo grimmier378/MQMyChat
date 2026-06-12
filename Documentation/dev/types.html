@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Types &amp; Constants - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html" class="active">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Types &amp; Constants</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>All structs, enums, constants, and global variables defined in MQMyChat.</p>
+
+  <h2>Data Hierarchy</h2>
+  <pre class="diagram">MyChatSettings
+  +-- channels: map&lt;int, ChatChannel&gt;
+        +-- events: vector&lt;ChatEvent&gt;
+              +-- filters: vector&lt;ChatFilter&gt;</pre>
+
+  <h2>Settings / Persistence Structs</h2>
+
+  <h3>ChatFilter <code>MyChatChannel.h:9</code></h3>
+  <p>Individual filter within a chat event. Filters are evaluated in order; first match wins.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>filterIndex</code></td><td>int</td><td>0</td><td>0 = default color, 1+ = conditional</td></tr>
+    <tr><td><code>filterString</code></td><td>std::string</td><td>(empty)</td><td>Pattern / token (e.g. ^You, GP1, NO2N3)</td></tr>
+    <tr><td><code>color</code></td><td>MQColor</td><td>(255,255,255,255)</td><td>RGBA output color</td></tr>
+    <tr><td><code>enabled</code></td><td>bool</td><td>true</td><td>Active flag</td></tr>
+    <tr><td><code>hidden</code></td><td>bool</td><td>false</td><td>Hide matching lines entirely</td></tr>
+  </table>
+
+  <h3>ChatEvent <code>MyChatChannel.h:17</code></h3>
+  <p>Blech event pattern with associated filter chain. Each event is registered with the Blech engine.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>eventIndex</code></td><td>int</td><td>0</td><td>Event position within channel</td></tr>
+    <tr><td><code>eventString</code></td><td>std::string</td><td>(empty)</td><td>Blech pattern (e.g. #*# says#*#)</td></tr>
+    <tr><td><code>enabled</code></td><td>bool</td><td>true</td><td>Active flag</td></tr>
+    <tr><td><code>filters</code></td><td>std::vector&lt;ChatFilter&gt;</td><td>(empty)</td><td>Ordered filter chain</td></tr>
+    <tr><td><code>blechId</code></td><td>unsigned int</td><td>0</td><td>Blech registration id</td></tr>
+  </table>
+
+  <h3>ChatChannel <code>MyChatChannel.h:26</code></h3>
+  <p>Full channel configuration and runtime state. Each channel owns a Zep ConsoleWidget and command history.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>channelId</code></td><td>int</td><td>0</td><td>Unique id (-1 main, 9000+ reserved)</td></tr>
+    <tr><td><code>name</code></td><td>std::string</td><td>(empty)</td><td>Display name</td></tr>
+    <tr><td><code>enabled</code></td><td>bool</td><td>true</td><td>Receives messages</td></tr>
+    <tr><td><code>echo</code></td><td>std::string</td><td>/say</td><td>Slash command for input</td></tr>
+    <tr><td><code>mainEnable</code></td><td>bool</td><td>true</td><td>Also echo to main console</td></tr>
+    <tr><td><code>enableLinks</code></td><td>bool</td><td>false</td><td>Clickable item links</td></tr>
+    <tr><td><code>popOut</code></td><td>bool</td><td>false</td><td>Separate window</td></tr>
+    <tr><td><code>locked</code></td><td>bool</td><td>false</td><td>Window locked</td></tr>
+    <tr><td><code>scale</code></td><td>float</td><td>1.0f</td><td>UI scale</td></tr>
+    <tr><td><code>fontSize</code></td><td>int</td><td>16</td><td>Font pixel height</td></tr>
+    <tr><td><code>tabOrder</code></td><td>int</td><td>0</td><td>Tab position</td></tr>
+    <tr><td><code>events</code></td><td>std::vector&lt;ChatEvent&gt;</td><td>(empty)</td><td>Event patterns</td></tr>
+    <tr><td><code>console</code></td><td>std::shared_ptr&lt;ConsoleWidget&gt;</td><td>nullptr</td><td>Zep render backend</td></tr>
+    <tr><td><code>commandHistory</code></td><td>std::vector&lt;std::string&gt;</td><td>(empty)</td><td>Input history</td></tr>
+    <tr><td><code>historyPos</code></td><td>int</td><td>-1</td><td>History cursor</td></tr>
+    <tr><td><code>inputBuffer[2048]</code></td><td>char</td><td>{0}</td><td>Input text buffer</td></tr>
+  </table>
+
+  <h3>MyChatSettings <code>MyChatChannel.h:53</code></h3>
+  <p>Global plugin settings persisted across <code>global_settings</code> + <code>channels</code> tables in SQLite.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>windowLocked</code></td><td>bool</td><td>false</td><td>Lock main window</td></tr>
+    <tr><td><code>timeStamps</code></td><td>bool</td><td>true</td><td>Show [HH:MM:SS] prefixes</td></tr>
+    <tr><td><code>scale</code></td><td>float</td><td>1.0f</td><td>Global UI scale</td></tr>
+    <tr><td><code>themeIdx</code></td><td>int</td><td>10</td><td>Theme index (0-10, see Theme.h)</td></tr>
+    <tr><td><code>doLinks</code></td><td>bool</td><td>false</td><td>Clickable links in main window</td></tr>
+    <tr><td><code>mainEcho</code></td><td>std::string</td><td>/say</td><td>Main console input command</td></tr>
+    <tr><td><code>mainFontSize</code></td><td>int</td><td>16</td><td>Main console font size</td></tr>
+    <tr><td><code>logCommands</code></td><td>bool</td><td>false</td><td>Log commands</td></tr>
+    <tr><td><code>keyFocus</code></td><td>bool</td><td>false</td><td>Enable focus hotkey</td></tr>
+    <tr><td><code>keyName</code></td><td>std::string</td><td>RightShift</td><td>Focus hotkey name</td></tr>
+    <tr><td><code>localEcho</code></td><td>bool</td><td>true</td><td>Echo own input</td></tr>
+    <tr><td><code>autoScroll</code></td><td>bool</td><td>true</td><td>Auto-scroll to newest</td></tr>
+    <tr><td><code>maxBufferLines</code></td><td>int</td><td>5000</td><td>Per-console scrollback cap</td></tr>
+    <tr><td><code>channels</code></td><td>std::map&lt;int, ChatChannel&gt;</td><td>(empty)</td><td>All channels keyed by channelId</td></tr>
+  </table>
+
+  <h3>PresetInfo <code>MyChatChannel.h:46</code></h3>
+  <p>Lightweight preset metadata for list display.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>id</code></td><td>int</td><td>0</td><td>Preset DB id</td></tr>
+    <tr><td><code>name</code></td><td>std::string</td><td>(empty)</td><td>Display name</td></tr>
+    <tr><td><code>server</code></td><td>std::string</td><td>(empty)</td><td>Server</td></tr>
+    <tr><td><code>createdBy</code></td><td>std::string</td><td>(empty)</td><td>Creator char name</td></tr>
+  </table>
+
+  <h2>Engine Runtime Structs</h2>
+
+  <h3>ClaimedLine <code>MQMyChat.h:15</code></h3>
+  <p>Spam-dedupe entry: a line claimed by a channel so the spam channel doesn't re-show it.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+    <tr><td><code>expireTime</code></td><td>std::chrono::steady_clock::time_point</td><td>now + CLAIMED_TTL (0.5s)</td></tr>
+  </table>
+
+  <h3>BlechEventData <code>MQMyChat.h:19</code></h3>
+  <p>Value stored in <code>m_blechEventMap</code>, keyed by Blech event id.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>channelId</code></td><td>int</td><td>0</td><td>Target channel id</td></tr>
+    <tr><td><code>eventIndex</code></td><td>int</td><td>0</td><td>Event index within channel</td></tr>
+  </table>
+
+  <h3>SortedChannel <code>MQMyChat.h:67</code></h3>
+  <p>Lightweight reference used for tab ordering.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+    <tr><td><code>id</code></td><td>int</td><td>Channel id</td></tr>
+    <tr><td><code>name</code></td><td>std::string</td><td>Channel name</td></tr>
+    <tr><td><code>tabOrder</code></td><td>int</td><td>Sort position</td></tr>
+  </table>
+
+  <h3>MyChatDatabase::TransactionGuard <code>MyChatDatabase.h:41</code></h3>
+  <p>RAII guard around a SQLite transaction. Constructor runs <code>BEGIN TRANSACTION</code>; destructor runs <code>ROLLBACK</code> unless <code>commit()</code> was called. Used by all four transactional saves to atomically delete and re-insert configuration.</p>
+  <table>
+    <tr><th>Member</th><th>Type</th><th>Purpose</th></tr>
+    <tr><td><code>db</code></td><td>MyChatDatabase*</td><td>Owner database</td></tr>
+    <tr><td><code>committed</code></td><td>bool</td><td>Set true by commit()</td></tr>
+    <tr><td><code>commit()</code></td><td>void</td><td>ExecSQL("COMMIT"), set committed</td></tr>
+    <tr><td>(copy/move)</td><td>deleted</td><td>Non-copyable, non-movable</td></tr>
+  </table>
+
+  <h2>Direction-Ring Widget POD (Core/Widgets.h)</h2>
+  <p>File-scope structs (before <code>namespace myui</code>, line 43) for the direction-ring visualization. Dependency-light and verbatim-shareable; consumed by <code>myui::DrawDirectionRing</code> and <code>ResolveColorSource</code>. MQMyChat ships these but does not currently use the ring.</p>
+
+  <h3>ColorSource <code>Core/Widgets.h:10</code></h3>
+  <p>Color mode selector for ring track or background fill.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>mode</code></td><td>int</td><td>0</td><td>0 = default/theme, 1 = distance tween, 2 = LOS toggle</td></tr>
+    <tr><td><code>custom</code></td><td>MQColor</td><td>(0,0,0,0)</td><td>mode 0 color; alpha 0 → theme fallback</td></tr>
+    <tr><td><code>distNear</code></td><td>MQColor</td><td>(60,200,75,255)</td><td>mode 1 near endpoint</td></tr>
+    <tr><td><code>distFar</code></td><td>MQColor</td><td>(230,130,30,255)</td><td>mode 1 far endpoint</td></tr>
+    <tr><td><code>losColor</code></td><td>MQColor</td><td>(60,200,75,255)</td><td>mode 2 LOS color</td></tr>
+    <tr><td><code>noLosColor</code></td><td>MQColor</td><td>(200,60,60,255)</td><td>mode 2 no-LOS color</td></tr>
+  </table>
+
+  <h3>RingStyle <code>Core/Widgets.h:21</code></h3>
+  <p>Visual style for the direction ring: track color, optional background fill, distance range, marker, glow, and text shadow.</p>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><code>track</code></td><td>ColorSource</td><td>—</td><td>Ring track color source</td></tr>
+    <tr><td><code>bgOn</code></td><td>bool</td><td>false</td><td>Enable background fill</td></tr>
+    <tr><td><code>bg</code></td><td>ColorSource</td><td>—</td><td>Background color source (if bgOn)</td></tr>
+    <tr><td><code>distMin</code></td><td>float</td><td>0.0</td><td>Shared distance range minimum</td></tr>
+    <tr><td><code>distMax</code></td><td>float</td><td>200.0</td><td>Shared distance range maximum</td></tr>
+    <tr><td><code>indicColor</code></td><td>MQColor</td><td>(0,0,0,0)</td><td>Marker; alpha 0 → ImGuiCol_SliderGrab</td></tr>
+    <tr><td><code>glowOn</code></td><td>bool</td><td>true</td><td>Enable marker glow</td></tr>
+    <tr><td><code>glowColor</code></td><td>MQColor</td><td>(0,0,0,0)</td><td>Glow halo color</td></tr>
+    <tr><td><code>glowAlpha</code></td><td>float</td><td>0.55</td><td>Glow opacity</td></tr>
+    <tr><td><code>textShadow</code></td><td>bool</td><td>true</td><td>Drop shadow behind distance text</td></tr>
+    <tr><td><code>thickness</code></td><td>float</td><td>3.0</td><td>Track line thickness</td></tr>
+    <tr><td><code>indicSize</code></td><td>float</td><td>4.0</td><td>Marker size</td></tr>
+  </table>
+
+  <h2>Enums</h2>
+
+  <h3>MyChatChannelType::Members <code>MyChatTLO.h:8</code></h3>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>Purpose</th></tr>
+    <tr><td>Name</td><td>0</td><td>Channel display name</td></tr>
+    <tr><td>ID</td><td>1</td><td>Channel ID number</td></tr>
+    <tr><td>Enabled</td><td>2</td><td>Active flag</td></tr>
+    <tr><td>TabOrder</td><td>3</td><td>Tab position</td></tr>
+    <tr><td>PopOut</td><td>4</td><td>Pop-out window flag</td></tr>
+    <tr><td>Echo</td><td>5</td><td>Default slash command</td></tr>
+    <tr><td>MainEnable</td><td>6</td><td>Main console flag</td></tr>
+  </table>
+
+  <h3>MyChatType::Members <code>MyChatTLO.h:28</code></h3>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>Purpose</th></tr>
+    <tr><td>Version</td><td>0</td><td>Plugin version</td></tr>
+    <tr><td>Channel</td><td>1</td><td>Channel accessor</td></tr>
+    <tr><td>ChannelCount</td><td>2</td><td>Number of channels</td></tr>
+  </table>
+
+  <h3>MyChatType::Methods <code>MyChatTLO.h:35</code></h3>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>Purpose</th></tr>
+    <tr><td>Send</td><td>0</td><td>Send message to channel</td></tr>
+  </table>
+
+  <h3>myui::ToggleFlags <code>Core/Widgets.h:45</code></h3>
+  <p>Bit flags for the <code>myui::DrawToggle</code> styled-widget appearance and animation. Part of the imanim widget set. Default set: <code>RightLabel | GlowOnHover | PulseOnHover</code>.</p>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>Purpose</th></tr>
+    <tr><td>None</td><td>0</td><td>No special styling</td></tr>
+    <tr><td>StarKnob</td><td>1 &lt;&lt; 0</td><td>Star (on) / moon (off) knob instead of circle</td></tr>
+    <tr><td>RightLabel</td><td>1 &lt;&lt; 1</td><td>Place label to the right of toggle</td></tr>
+    <tr><td>AnimateKnob</td><td>1 &lt;&lt; 2</td><td>Spin/animate knob continuously</td></tr>
+    <tr><td>GlowOnHover</td><td>1 &lt;&lt; 3</td><td>Breathing glow halo on hover</td></tr>
+    <tr><td>AnimateOnHover</td><td>1 &lt;&lt; 4</td><td>Animate knob only while hovered</td></tr>
+    <tr><td>PulseOnHover</td><td>1 &lt;&lt; 5</td><td>Pulse knob brightness on hover</td></tr>
+    <tr><td>KnobBorder</td><td>1 &lt;&lt; 6</td><td>Draw border ring around knob</td></tr>
+  </table>
+
+  <h3>myui::ButtonFlags <code>Core/Widgets.h:131</code></h3>
+  <p>Bit flags for the <code>myui::DrawStyledButton</code> widget animation and visual effects. <code>kDefaultButtonFlags</code> = all three.</p>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>Purpose</th></tr>
+    <tr><td>None</td><td>0</td><td>No special effects</td></tr>
+    <tr><td>GlowOnHover</td><td>1 &lt;&lt; 0</td><td>Breathing glow halo on hover</td></tr>
+    <tr><td>PressSink</td><td>1 &lt;&lt; 1</td><td>Button sinks/animates when pressed</td></tr>
+    <tr><td>Shimmer</td><td>1 &lt;&lt; 2</td><td>Shimmer/wave edge effect</td></tr>
+  </table>
+
+  <h2>Constants</h2>
+  <table>
+    <tr><th>Name</th><th>Value</th><th>File:Line</th><th>Purpose</th></tr>
+    <tr><td><code>DEFAULT_MAX_BUFFER_LINES</code></td><td>5000</td><td>MyChatChannel.h:7</td><td>Default console buffer cap</td></tr>
+    <tr><td><code>CHANNEL_MAIN_ID</code></td><td>-1</td><td>MyChatChannel.h:71</td><td>Main console pseudo-channel</td></tr>
+    <tr><td><code>CHANNEL_SPAM</code></td><td>9000</td><td>MyChatChannel.h:72</td><td>Spam channel id</td></tr>
+    <tr><td><code>CHANNEL_RESERVED_START</code></td><td>9000</td><td>MyChatChannel.h:73</td><td>Reserved id range start (NPC = 9100)</td></tr>
+    <tr><td><code>CLAIMED_TTL</code></td><td>0.5f</td><td>MyChatChannel.h:74</td><td>Claimed-line lifetime (s)</td></tr>
+    <tr><td><code>MAX_COMMAND_HISTORY</code></td><td>100</td><td>MyChatChannel.h:75</td><td>Input history per console</td></tr>
+    <tr><td><code>MAX_CHANNEL_HISTORY</code></td><td>10</td><td>MyChatChannel.h:76</td><td>Channel-config history</td></tr>
+    <tr><td><code>TAB_ORDER_SAVE_INTERVAL</code></td><td>3.0f</td><td>MyChatChannel.h:77</td><td>Tab-reorder save debounce (s)</td></tr>
+    <tr><td><code>PLUGIN_VERSION</code></td><td>0.1</td><td>MQMyChat.cpp:22</td><td>Plugin version</td></tr>
+    <tr><td><code>MQMYCHAT_API_VERSION</code></td><td>1</td><td>MyChatAPI.h:10</td><td>Exported API/ABI version</td></tr>
+    <tr><td><code>MQMYCHAT_DEFAULT_COLOR</code></td><td>MQColor{240,240,240}</td><td>MyChatAPI.h:12</td><td>Default send color</td></tr>
+    <tr><td><code>ThemeCount</code></td><td>11</td><td>Theme.h:16</td><td>Number of ImGui themes</td></tr>
+  </table>
+
+  <h2>Global Variables</h2>
+  <table>
+    <tr><th>Name</th><th>Type</th><th>File:Line</th><th>Scope</th><th>Purpose</th></tr>
+    <tr><td><code>g_chatEngine</code></td><td>MyChatEngine*</td><td>MQMyChat.h:109 / MQMyChat.cpp:24</td><td>extern</td><td>Singleton engine</td></tr>
+    <tr><td><code>s_renderer</code></td><td>MyChatRenderer</td><td>MQMyChat.cpp:25</td><td>static (file)</td><td>Singleton renderer</td></tr>
+    <tr><td><code>s_iamCtx</code></td><td>iam_context*</td><td>MQMyChat.cpp:32</td><td>static (file)</td><td>Plugin-owned imanim context</td></tr>
+    <tr><td><code>s_chatAPI</code></td><td>ChatAPIImpl</td><td>MQMyChat.cpp:170</td><td>static (anon ns)</td><td>Exported ChatAPI instance</td></tr>
+    <tr><td><code>pMyChatChannelType</code></td><td>MyChatChannelType*</td><td>MyChatTLO.cpp:4</td><td>extern</td><td>TLO type instance</td></tr>
+    <tr><td><code>pMyChatType</code></td><td>MyChatType*</td><td>MyChatTLO.cpp:5</td><td>extern</td><td>TLO type instance</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="architecture.html">&larr; Architecture</a>
+    <span> | </span>
+    <a href="chat-routing.html">Chat Routing &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Main Window - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="main-window.html" class="active">Main Window</a>
+  <a href="channels-and-events.html">Channels &amp; Events</a>
+  <a href="presets.html">Presets</a>
+  <a href="settings.html">Settings &amp; Options</a>
+  <a href="commands.html">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Main Window</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>The main MQMyChat window is your central hub for organized chat. It has a menu bar at the top, tabs for each channel, and an input box at the bottom.</p>
+  <p>The settings and preset screens use smooth, animated controls (sliding tabs, animated checkboxes and drop-downs, and expanding sections) that follow your chosen theme's colors. This is purely visual &mdash; everything works exactly as described below.</p>
+
+  <h2>Window Layout</h2>
+  <div class="diagram">┌─────────────────────────────────────────────────┐
+│ [Lock] [Settings]  Options  Channels  Links     │  ← Menu Bar
+│                    PopOut   Presets              │
+├─────────────────────────────────────────────────┤
+│ Main │ Combat │ Tells │ Guild │ Loot │ ...      │  ← Tab Bar
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  [12:34:56] Soandso hits a gnoll for 500 dmg    │  ← Console
+│  [12:34:57] You crush a gnoll for 120 dmg       │     (scrollable)
+│  [12:34:58] Soandso heals you for 300 pts       │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│ /say ___________________________________[Enter] │  ← Input Box
+└─────────────────────────────────────────────────┘</div>
+
+  <h2>Menu Bar</h2>
+
+  <h3>Lock Button</h3>
+  <p>Toggles whether the window can be moved and resized. When locked, the window stays in place and the title bar is hidden. Use <code>/mychat lock</code> and <code>/mychat unlock</code> as shortcuts.</p>
+
+  <h3>Settings Button (gear)</h3>
+  <p>Opens the <a href="channels-and-events.html#the-settings-window">Settings window</a> &mdash; a
+  two-pane editor with a channel list (including Main) on the left and Settings / Events and Filters
+  tabs on the right, where you manage all your channels, events, and filters.</p>
+
+  <h3>Options Menu</h3>
+  <p>See <a href="settings.html">Settings &amp; Options</a> for a full description of every option.</p>
+
+  <h3>Channels Menu</h3>
+  <p>Quick checkboxes to enable or disable each channel. When you disable a channel, its events stop matching and no new messages are routed to it. The channel and its settings are preserved &mdash; just toggle it back on when you want it.</p>
+  <div class="tip">
+    Disabling a channel here is the fastest way to temporarily stop seeing certain types of messages without deleting anything.
+  </div>
+
+  <h3>Links Menu</h3>
+  <p>Per-channel checkboxes to enable clickable item links. When enabled, item links in that channel's messages become clickable (like in the EQ chat window).</p>
+
+  <h3>PopOut Menu</h3>
+  <p>Per-channel checkboxes to open channels in their own floating windows. See <a href="#pop-out-windows">Pop-Out Windows</a> below.</p>
+
+  <h3>Presets Menu</h3>
+  <p>A dropdown to switch between saved presets, plus a "Manage Presets..." button to open the <a href="presets.html">Preset Manager</a> for advanced operations like copying, renaming, and deleting.</p>
+
+  <h2>Tab Bar</h2>
+  <p>Each enabled channel gets its own tab. The <strong>Main</strong> tab is always first and shows a combined view of messages from all channels that have "main enable" turned on.</p>
+
+  <h3>Reordering Tabs</h3>
+  <p>Drag any tab left or right to reorder. The new order saves automatically after about 3 seconds.</p>
+
+  <h3>Right-Click Menu</h3>
+  <p>Right-click (or use the popup button on) any channel tab to see:</p>
+  <ul>
+    <li><strong>Edit</strong> &mdash; Opens the channel editor for events and filters</li>
+    <li><strong>Pop Out</strong> &mdash; Opens this channel in a separate floating window</li>
+    <li><strong>Delete</strong> &mdash; Removes the channel entirely</li>
+  </ul>
+
+  <h2>Console Area</h2>
+  <p>The scrollable text area showing messages for the selected channel. Messages appear with:</p>
+  <ul>
+    <li><strong>Timestamps</strong> in yellow (if enabled): <code>[HH:MM:SS]</code></li>
+    <li><strong>Custom colors</strong> based on your filter settings</li>
+    <li><strong>Clickable links</strong> if the Links option is enabled for that channel</li>
+  </ul>
+  <p>The console auto-scrolls to the newest message (if auto-scroll is enabled). Scroll up to read history.</p>
+
+  <h2>Input Box</h2>
+  <p>At the bottom of each tab is an input box. Type a message and press <kbd>Enter</kbd> to send it.</p>
+
+  <h3>How Messages Are Sent</h3>
+  <ul>
+    <li>If your message starts with <code>/</code>, it's sent as-is (e.g., <code>/gu Hello guild!</code>)</li>
+    <li>If your message doesn't start with <code>/</code>, the channel's echo command is prepended. For example, if the echo command is <code>/say</code> and you type <code>Hello</code>, it sends <code>/say Hello</code></li>
+    <li>The Main tab uses its own echo command (default: <code>/say</code>), configured in the Settings window under the Main channel's Settings tab</li>
+  </ul>
+
+  <h3>Command History</h3>
+  <p>Press <kbd>Up</kbd> and <kbd>Down</kbd> to scroll through your previous commands. Each channel keeps its own history (up to 100 entries per channel).</p>
+
+  <h3>Local Echo</h3>
+  <p>When enabled (default), your typed messages appear in gray in the console immediately, so you can see what you sent. Toggle this in Options.</p>
+
+  <h2 id="pop-out-windows">Pop-Out Windows</h2>
+  <p>Any channel can be "popped out" into its own separate floating window. This is useful for channels you always want visible, like Tells or Guild chat.</p>
+
+  <h3>How to Pop Out a Channel</h3>
+  <ul>
+    <li>Use the <strong>PopOut</strong> menu in the menu bar, or</li>
+    <li>Right-click a tab and select <strong>Pop Out</strong></li>
+  </ul>
+
+  <h3>Pop-Out Window Features</h3>
+  <ul>
+    <li>Titled "My Chat - <ChannelName>" and floats independently of the main window</li>
+    <li>Has its own Lock button and Settings button at the top</li>
+    <li>Can be positioned anywhere on screen and resized (unless locked)</li>
+    <li>Has its own console and input box, just like a tab in the main window</li>
+    <li>When a channel is popped out, it no longer appears as a tab in the main window (just the floating window shows it)</li>
+  </ul>
+
+  <h2>Focus Key</h2>
+  <p>If you enable the focus key in Options, pressing a specific key (like <kbd>RightShift</kbd> or <kbd>`</kbd>) will immediately put your cursor in the input box of the currently visible channel. This lets you start typing without clicking.</p>
+
+  <div class="page-nav">
+    <a href="getting-started.html">&larr; Previous: Getting Started</a>
+    <a href="channels-and-events.html">Next: Channels &amp; Events &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

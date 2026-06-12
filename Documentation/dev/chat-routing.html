@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat Routing - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html" class="active">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Chat Routing</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>The core pipeline: from incoming EQ chat through Blech pattern matching, filter evaluation, token substitution, and Lua pattern matching to colored console output.</p>
+
+  <h2>End-to-End Flow</h2>
+  <div class="diagram">EQ Chat Message
+│
+▼
+OnIncomingChat (MQMyChat.cpp:189) / OnWriteChatColor (MQMyChat.cpp:196)
+│
+▼
+ProcessIncomingChat (MQMyChat.cpp:598) / ProcessWriteChat (MQMyChat.cpp:622)
+│
+▼
+m_blech→Feed(line)  ── Blech B-Tree pattern evaluation
+│
+▼ (on match)
+BlechCallback (MQMyChat.cpp:578)  ── looks up channelId/eventIndex via m_blechEventMap
+│
+▼
+RouteToChannel (MQMyChat.cpp:633)
+│
+├── Filter evaluation loop (lines 664+)
+│   ├── MatchFilter (MQMyChat.cpp:1244)
+│   │   ├── SubstituteTokens (MQMyChat.cpp:1042)
+│   │   └── PatternFind (MQMyChat.cpp:904)
+│   ├── Hidden filter? → discard line
+│   └── Color filter? → apply color
+│
+├── Claim line (m_claimedLines, 500ms TTL)
+├── Consider color mapping
+│
+▼
+AppendToConsole (MQMyChat.cpp:842)
+├── Strip/reformat timestamps
+├── Append to channel console
+└── Optionally append to main console (if mainEnable)
+
+Unclaimed lines → Spam channel (if enabled, in ProcessIncomingChat)</div>
+
+  <h2>Blech Event Registration</h2>
+  <p><code>RegisterBlechEvents()</code> (MQMyChat.cpp:536-562) sets up the pattern matching engine:</p>
+  <ol>
+    <li>Iterates all channels in <code>settings.channels</code></li>
+    <li>For each enabled channel, iterates its enabled events</li>
+    <li>Calls <code>m_blech→AddEvent(eventString, BlechCallback, &amp;data)</code></li>
+    <li>Stores returned ID in <code>m_blechEventMap[id] = {channelId, eventIndex}</code></li>
+    <li>Also stores ID in <code>event.blechId</code> for later removal</li>
+  </ol>
+
+  <div class="note">
+    Blech uses <code>#</code> as wildcard delimiter and <code>|</code> as separator.
+    Example patterns: <code>"#*#heals#*#"</code>, <code>"#*#tells you,#*#"</code>, <code>"#*#slashes#*#"</code>
+  </div>
+
+  <h2>Filter Evaluation</h2>
+  <p><code>RouteToChannel(channelId, eventIndex, line, color)</code> (MQMyChat.cpp:633):</p>
+  <ol>
+    <li>Find channel in <code>settings.channels</code> by channelId</li>
+    <li>Find matching event by eventIndex</li>
+    <li>Iterate filters in order:
+      <ul>
+        <li><strong>filterIndex 0:</strong> Default color (no pattern matching, always applies)</li>
+        <li><strong>filterIndex 1+:</strong> Conditional &mdash; calls <code>MatchFilter(line, filter)</code></li>
+        <li>If match + <code>hidden=true</code>: line discarded entirely</li>
+        <li>If match + <code>hidden=false</code>: use filter's color, stop checking</li>
+      </ul>
+    </li>
+    <li>If non-default filters exist but none matched: skip line</li>
+    <li>Claim line in <code>m_claimedLines</code> with 500ms TTL</li>
+    <li>Special consider channel: map CONCOLOR_* to MQColor</li>
+    <li><code>AppendToConsole()</code> to channel console + optionally main console</li>
+  </ol>
+
+  <h2>Token Substitution</h2>
+  <p><code>SubstituteTokens(pattern, chatLine)</code> (MQMyChat.cpp:1042) replaces symbolic tokens in filter patterns with actual game values at match time. Tokens are matched at <strong>word boundaries</strong> and <strong>all occurrences</strong> of the matched token type are replaced via <code>ReplaceTokenWB</code> / <code>ContainsTokenWB</code> (MQMyChat.cpp:1022, 1010). Only one token <em>type</em> is substituted per pattern (the first matching branch returns), matching the Lua client's <code>elseif</code> chain.</p>
+
+  <table>
+    <tr><th>Token</th><th>Meaning</th><th>Source</th><th>Fallback</th></tr>
+    <tr><td><code>M3</code></td><td>Your character name</td><td><code>pLocalPlayer→Name</code></td><td>(unchanged)</td></tr>
+    <tr><td><code>PT1</code></td><td>Your pet name</td><td><code>pLocalPlayer→PetID</code> → GetSpawnByID</td><td>"NO PET"</td></tr>
+    <tr><td><code>PT3</code></td><td>Group member's pet name</td><td>Extract from line, validate via group</td><td>"NO PET"</td></tr>
+    <tr><td><code>M1</code></td><td>Main Assist name</td><td><code>pGroupInfo</code> loop, <code>IsMainAssist()</code></td><td>"NO MA"</td></tr>
+    <tr><td><code>TK1</code></td><td>Main Tank name</td><td><code>pGroupInfo</code> loop, <code>IsMainTank()</code></td><td>"NO TANK"</td></tr>
+    <tr><td><code>P3</code></td><td>PC name from chat line</td><td><code>ExtractNameFromLine()</code>, validate not NPC</td><td>"None"</td></tr>
+    <tr><td><code>N3</code></td><td>NPC name from chat line</td><td><code>ExtractNameFromLine()</code>, validate is NPC</td><td>"None"</td></tr>
+    <tr><td><code>RL</code></td><td>Raid Leader</td><td><code>pRaid→RaidLeaderName</code></td><td>"NO RAID"</td></tr>
+    <tr><td><code>G1–G5</code></td><td>Group members 1–5</td><td><code>pGroupInfo→GetGroupMember(i)</code></td><td>"NO GROUP"</td></tr>
+    <tr><td><code>H1</code></td><td>Group healer</td><td>Loop group, find Cleric/Druid/Shaman</td><td>"NO HEALER"</td></tr>
+    <tr><td><code>GP1</code></td><td>Any matching group member</td><td>Loop group, first pattern match</td><td>"NO GROUP"</td></tr>
+  </table>
+
+  <h3>Prefix Modifiers</h3>
+  <table>
+    <tr><th>Prefix</th><th>Effect</th></tr>
+    <tr><td><code>NO2</code></td><td>Inverts the match result (exclude lines matching the pattern)</td></tr>
+    <tr><td><code>^</code></td><td>Lua pattern anchor: matches at start of line (handled natively by Lua)</td></tr>
+  </table>
+
+  <h2>Pattern Find</h2>
+  <p><code>PatternFind(line, pattern)</code> (MQMyChat.cpp:904):</p>
+  <ol>
+    <li>Empty pattern matches everything (returns <code>true</code>).</li>
+    <li><strong>All filters are matched as Lua patterns:</strong> Calls <code>lua_pcall</code> on <code>string.find(line, pattern)</code> using <code>m_luaState</code>. Matching is <strong>case-sensitive</strong>, and Lua pattern syntax (<code>^</code>, <code>$</code>, <code>%d</code>, <code>%a</code>, character classes, etc.) is honored directly.</li>
+    <li><strong>Degraded fallback</strong> — only when <code>m_luaState</code> is null (LuaJIT failed to initialize): a literal case-sensitive <code>text.find(pattern)</code> substring match.</li>
+  </ol>
+
+  <div class="warning">
+    <strong>No heuristic detection:</strong> There is no <code>%</code>-detection heuristic and no separate plain-substring code path. The previous <code>IsLuaPattern</code> helper was removed. All patterns use Lua <code>string.find</code>, making matching always case-sensitive and supporting full Lua regex syntax natively. The <code>^</code> anchor is handled natively by Lua as a start-of-line anchor — it is not special-cased in code.
+  </div>
+
+  <h2>Match Filter</h2>
+  <p><code>MatchFilter(line, filter)</code> (MQMyChat.cpp:1244):</p>
+  <ol>
+    <li><code>matchStr = SubstituteTokens(filter.filterString, line)</code></li>
+    <li><code>found = PatternFind(line, matchStr)</code></li>
+    <li>If <code>NO2</code> prefix was present: return <code>!found</code></li>
+  </ol>
+
+  <h2>Name Extraction</h2>
+  <p><code>ExtractNameFromLine(line)</code> (MQMyChat.cpp:932–975) searches for actor names in chat by finding keywords:</p>
+  <p><strong>Keywords:</strong> "pet tells you", "tells you,", "says to you,", "says,'", "whispers,", "shouts,", "slashes", "pierces", "kicks", "crushes", "bashes", "hits", "tries", "backstabs", "bites", "begins"</p>
+  <p>Extracts the name preceding the keyword. Used by P3/N3 token substitution.</p>
+  <p><code>IsNPCName(name)</code> (MQMyChat.cpp:914) validates whether a name is an NPC via <code>GetSpawnByName</code>.</p>
+
+  <h2>Consider Color Mapping</h2>
+  <p>Special handling in <code>RouteToChannel</code> (MQMyChat.cpp:663–677) for the consider channel maps EQ consider colors to RGB:</p>
+  <table>
+    <tr><th>CONCOLOR</th><th>RGB</th></tr>
+    <tr><td>GREY</td><td>(153, 153, 153)</td></tr>
+    <tr><td>GREEN</td><td>(0, 255, 0)</td></tr>
+    <tr><td>LIGHTBLUE</td><td>(94, 180, 255)</td></tr>
+    <tr><td>BLUE</td><td>(0, 0, 255)</td></tr>
+    <tr><td>WHITE</td><td>(255, 255, 255)</td></tr>
+    <tr><td>YELLOW</td><td>(255, 255, 0)</td></tr>
+    <tr><td>RED</td><td>(230, 26, 26)</td></tr>
+  </table>
+
+  <h2>Spam Channel</h2>
+  <p>Channel ID 9000 (<code>CHANNEL_SPAM</code>). Lines <em>not</em> claimed by any channel during Blech processing are routed to the spam channel if enabled. Checked in <code>ProcessIncomingChat</code> after <code>m_blech→Feed()</code> completes.</p>
+
+  <div class="note">
+    Claimed lines are tracked in <code>m_claimedLines</code> with a 500 ms TTL (via <code>CLAIMED_TTL</code>). This deduplicates claimed lines within the time window.
+  </div>
+
+  <h2>Console Output</h2>
+  <p><code>AppendToConsole(console, line, color, ...)</code> (MQMyChat.cpp:842):</p>
+  <ol>
+    <li>Strips existing timestamps like <code>[HH:MM:SS]</code> from line</li>
+    <li>If timestamps enabled: generates new yellow <code>[HH:MM:SS]</code> prefix</li>
+    <li>Calls <code>console→AppendText()</code> with separately colored segments</li>
+  </ol>
+
+  <div class="page-nav">
+    <a href="types.html">&larr; Types &amp; Constants</a>
+    <a href="database.html">Database &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

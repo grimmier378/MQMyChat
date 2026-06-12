@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQMyChat Dev Docs - Building</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>MQMyChat Dev Docs</h2>
+    <ul>
+      <li><a href="index.html">Overview</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="types.html">Types &amp; Constants</a></li>
+      <li><a href="chat-routing.html">Chat Routing</a></li>
+      <li><a href="database.html">Database</a></li>
+      <li><a href="renderer.html">Renderer</a></li>
+      <li><a href="plugin-api.html">Plugin API</a></li>
+      <li><a href="tlo.html">TLO</a></li>
+      <li><a href="building.html" class="active">Building</a></li>
+    </ul>
+  </nav>
+
+  <main class="content">
+    <h1>Building MQMyChat</h1>
+    <p><em>Last Updated: 2026-06-11</em></p>
+
+    <h2>Build Configuration</h2>
+    <p>MQMyChat is built as a Win32 (x86) Release DLL using Visual Studio 2022+ and CMake integration. EverQuest is a 32-bit application, so the plugin must be compiled for the Win32 platform.</p>
+
+    <h3>Build Environment</h3>
+    <p>On this development machine, Visual Studio 2022 Insiders is available at:</p>
+    <pre>C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Current\Bin\MSBuild.exe</pre>
+
+    <h2>MSBuild Command</h2>
+    <p>Build MQMyChat with the following command:</p>
+    <pre>C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Current\Bin\MSBuild.exe "D:\gitStuff\macroquest\plugins\MQMyChat\MQMyChat.vcxproj" -p:Configuration=Release -p:Platform=Win32 -nologo -verbosity:minimal</pre>
+
+    <div class="note">
+      <strong>VS2022 Community Path:</strong> If building on a machine with the older Community edition at <code>C:\Program Files\Microsoft Visual Studio\2022\Community\</code>, adjust the MSBuild path accordingly. The Insiders path shown above is the standard for this development environment.
+    </div>
+
+    <h2>Project Structure</h2>
+    <p>The <code>MQMyChat.vcxproj</code> file is managed by CMakeLists.txt and defines the following build targets:</p>
+
+    <h3>Source Files</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>MQMyChat.cpp</code></td>
+          <td>Plugin entry point, engine lifecycle, chat routing, Blech events, token substitution</td>
+        </tr>
+        <tr>
+          <td><code>MyChatDatabase.cpp</code></td>
+          <td>SQLite schema initialization, presets, global settings, character overrides</td>
+        </tr>
+        <tr>
+          <td><code>MyChatRenderer.cpp</code></td>
+          <td>ImGui windows, tabs, popouts, configuration UI</td>
+        </tr>
+        <tr>
+          <td><code>MyChatTLO.cpp</code></td>
+          <td>TLO registration and member resolution for <code>${MyChat}</code></td>
+        </tr>
+        <tr>
+          <td><code>Core/Widgets.cpp</code></td>
+          <td>Shared styled/animated widget implementations (synced from MQMyUI)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Header Files</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>MQMyChat.h</code></td>
+          <td>Engine class definition, plugin globals</td>
+        </tr>
+        <tr>
+          <td><code>MyChatChannel.h</code></td>
+          <td>Data structures: ChatFilter, ChatEvent, ChatChannel, MyChatSettings, PresetInfo</td>
+        </tr>
+        <tr>
+          <td><code>MyChatDatabase.h</code></td>
+          <td>Database interface: Open, Close, schema, presets, load/save</td>
+        </tr>
+        <tr>
+          <td><code>MyChatRenderer.h</code></td>
+          <td>ImGui renderer interface and window management</td>
+        </tr>
+        <tr>
+          <td><code>MyChatTLO.h</code></td>
+          <td>TLO member type definitions</td>
+        </tr>
+        <tr>
+          <td><code>MyChatAPI.h</code></td>
+          <td>Exported pure-virtual interface for other plugins</td>
+        </tr>
+        <tr>
+          <td><code>Theme.h</code></td>
+          <td>11 ImGui color themes (shared with MQMyDPS)</td>
+        </tr>
+        <tr>
+          <td><code>Core/Widgets.h</code></td>
+          <td>Styled widget declarations (synced from MQMyUI)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Dependencies</h2>
+    <p>MQMyChat links against the following libraries and frameworks:</p>
+
+    <h3>MacroQuest Core</h3>
+    <ul>
+      <li><code>MQ2Main</code> — Core MacroQuest engine and hooks</li>
+      <li><code>eqlib</code> — EverQuest data structures and game state</li>
+      <li><code>pluginapi</code> — Plugin interface and registration</li>
+    </ul>
+
+    <h3>Third-Party Libraries</h3>
+    <ul>
+      <li><code>sqlite3</code> — SQLite database engine (vcpkg: <code>unofficial-sqlite3</code>)</li>
+      <li><code>lua51</code> — LuaJIT interpreter for pattern matching and token substitution</li>
+      <li><code>fmt</code> — String formatting library</li>
+    </ul>
+
+    <h3>ImGui &amp; Rendering</h3>
+    <ul>
+      <li><code>ConsoleWidget</code> (Zep) — Text console with syntax highlighting and command history</li>
+      <li><code>ImGui</code> — Immediate-mode GUI rendering</li>
+      <li><code>im_anim</code> — Animation and transition helpers for ImGui</li>
+      <li><code>AlphaMask</code> — Alpha-masked texture rendering for styled bars</li>
+      <li><code>IconsFontAwesome</code> — Font Awesome icon glyphs in ImGui</li>
+    </ul>
+
+    <h2>Output &amp; Installation</h2>
+    <p>After a successful build, the compiled DLL is placed at:</p>
+    <pre>D:\gitStuff\macroquest\plugins\MQMyChat\build\Emu\bin\release\plugins\MQMyChat.dll</pre>
+
+    <p>To load the plugin in EverQuest, use the command:</p>
+    <pre>/plugin MQMyChat</pre>
+
+    <div class="tip">
+      <strong>Plugin Loading:</strong> Ensure that MQMyChat.dll is copied to the correct EverQuest plugin directory (typically <code>C:\Program Files\Sony Online Entertainment\Everquest\plugins\</code>) and load it after other dependencies like MQ2Main are initialized.
+    </div>
+
+    <h2>Shared Components</h2>
+    <p><code>Core/Widgets.{h,cpp}</code> are kept <strong>verbatim in sync with MQMyUI</strong> to ensure consistency across the MQMy* plugin ecosystem. When updating these files, make sure to propagate changes to the MQMyUI copy and vice versa. See the <a href="renderer.html">Renderer documentation</a> for details on the myui styled widget set.</p>
+
+    <h2>CMakeLists Configuration</h2>
+    <p>The build is configured via <code>CMakeLists.txt</code> with the following setup:</p>
+    <ul>
+      <li><strong>Shared library target:</strong> <code>MQMyChat</code></li>
+      <li><strong>Folder:</strong> Plugins in Visual Studio solution explorer</li>
+      <li><strong>Link library:</strong> <code>unofficial::sqlite3::sqlite3</code> (vcpkg dependency)</li>
+      <li><strong>Plug-in properties:</strong> Applied via <code>target_Plugin_props()</code> macro from the MacroQuest build system</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="tlo.html">← Previous: TLO</a>
+      <span></span>
+    </div>
+  </main>
+</body>
+</html>

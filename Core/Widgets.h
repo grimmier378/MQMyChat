@@ -4,6 +4,42 @@
 
 #include <string>
 
+// Style/persistence POD for the direction-ring widget (DrawDirectionRing). Lives
+// here (not UiConfig) so Core/Widgets stays dependency-light and verbatim-shareable
+// across the sibling MQMy* plugins; UiConfig includes this header to persist it.
+struct ColorSource
+{
+	int     mode = 0;                  // 0=Default(theme), 1=Distance, 2=Visibility
+
+	MQColor custom{ 0, 0, 0, 0 };      // Default mode; alpha 0 => theme fallback color
+	MQColor distNear{ 60, 200, 75, 255 };
+	MQColor distFar{ 230, 130, 30, 255 };
+	MQColor losColor{ 60, 200, 75, 255 };
+	MQColor noLosColor{ 200, 60, 60, 255 };
+};
+
+struct RingStyle
+{
+	ColorSource track;                 // ring track color source
+
+	bool        bgOn = false;          // fill behind the text, inside the track
+	ColorSource bg;                    // background color source (own modes/colors)
+
+	float   distMin = 0.0f;            // shared distance range for both sources
+	float   distMax = 200.0f;
+
+	MQColor indicColor{ 0, 0, 0, 0 };  // marker color; alpha 0 => ImGuiCol_SliderGrab
+
+	bool    glowOn    = true;
+	MQColor glowColor{ 0, 0, 0, 0 };   // alpha 0 => follow indicator color
+	float   glowAlpha = 0.55f;
+
+	bool    textShadow = true;         // drop shadow behind the distance text
+
+	float   thickness = 3.0f;
+	float   indicSize = 4.0f;
+};
+
 namespace myui
 {
 enum ToggleFlags
@@ -38,6 +74,36 @@ bool AnimationsEnabled();
 // falling alpha), scaled by intensity 0..1. Shared by the styled button and the
 // toolbar hover so their glows match. Colors come from the caller (theme-sourced).
 void SoftGlowRoundRect(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float rounding, ImVec4 col, float intensity);
+
+// Direction ring: a circular track with a glowing marker that orbits it to show a
+// spawn's bearing relative to the player's facing (0 deg = straight ahead = top of
+// the ring, clockwise positive), and `distText` centered inside. Shared by the
+// player/group/raid/target windows. The widget owns the smoothing: it tweens the
+// drawn angle toward `targetBearingDeg` along the shortest arc (so a throttled,
+// occasionally-stale bearing still glides) and tweens the track color for the
+// Distance/Visibility modes, all keyed by `id` (use a per-spawn stable id, e.g.
+// ImGui::GetID on the spawn). `distance`/`los` feed the track-color modes. Colors
+// fall back to the theme when left unset: track -> ImGuiCol_FrameBg, marker ->
+// ImGuiCol_SliderGrab, so callers can restyle it with PushStyleColor.
+// Resolve a ColorSource to this frame's color. mode 0 = custom (or themeFallback when
+// custom alpha is 0); 1 = tween near->far over [distMin,distMax]; 2 = toggle by los.
+// animSeed disambiguates the per-id animation state (pass distinct values for track vs bg).
+ImVec4 ResolveColorSource(ImGuiID id, ImU32 animSeed, const ColorSource& cs,
+	float distance, float distMin, float distMax, bool los, ImGuiCol themeFallback, float dt);
+
+void DrawDirectionRing(ImDrawList* dl, ImGuiID id, ImVec2 center, float targetBearingDeg,
+	float distance, bool los, const char* distText, const RingStyle& style);
+
+// Effective radius DrawDirectionRing will draw at. The ring always auto-fits to a
+// fixed 3-digit text width (constant size, font-scaled), so `distText` is ignored;
+// it stays in the signature so callers can reserve room next to a right-aligned
+// distance and have the whole ring clear the surrounding border.
+float DirectionRingRadius(const char* distText, const RingStyle& style);
+
+// Widen a draw list's clip to the CURRENT ImGui window's full rect, so an overlay
+// (like the direction ring) drawn into a small cell escapes the cell but never the
+// window. Inside a child it clips to that child's rect. Pair with PopClipRect().
+void PushWindowClip(ImDrawList* dl);
 
 // Tone a bright theme accent down by blending it toward the window background
 // (theme-relative, keeps hue + original alpha). Filled accents (buttons, pills,

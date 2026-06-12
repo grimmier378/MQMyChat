@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html" class="active">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Architecture</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>Module map, dependency graph, initialization order, cross-module calls, and global state.</p>
+
+  <h2>Module Dependency Graph</h2>
+  <div class="diagram">MQMyChat.cpp (entry point)
+  #include MQMyChat.h
+  #include MyChatDatabase.h
+  #include MyChatRenderer.h
+  #include MyChatTLO.h
+  #include MyChatAPI.h
+  External: &lt;mq/Plugin.h&gt;, &lt;Blech/Blech.h&gt;, &lt;luajit/lua.h&gt;, &lt;imgui/imanim/im_anim.h&gt;
+  Defines: ChatAPIImpl, s_chatAPI, s_iamCtx (plugin-owned imanim context),
+           PLUGIN_API GetPluginInterface()
+
+MQMyChat.h
+  #include MyChatChannel.h
+  #include MyChatAPI.h        (for mqmychat::MQMYCHAT_DEFAULT_COLOR default arg)
+  #include &lt;mq/imgui/ConsoleWidget.h&gt;
+  #include &lt;Blech/Blech.h&gt;
+  Declares: MyChatEngine class, extern g_chatEngine
+
+MyChatAPI.h (distributable, header-only)
+  #include &lt;mq/Plugin.h&gt;
+  Declares: mqmychat::ChatAPI : mq::PluginInterface, GetChatAPI() helper
+
+MyChatDatabase.h
+  #include MyChatChannel.h
+  #include &lt;sqlite3.h&gt;
+
+MyChatRenderer.h
+  Forward declares: MyChatEngine
+  #include &lt;imgui/imgui.h&gt;, Theme.h
+  (MyChatRenderer.cpp also #includes Core/Widgets.h for the myui:: styled widgets)
+
+Core/Widgets.h / Core/Widgets.cpp  (namespace myui; shared imanim styled-widget set,
+  copied verbatim from MQMyUI — identical across all four MQMy* plugins)
+  #include &lt;mq/Plugin.h&gt;, &lt;imgui/imgui_internal.h&gt;, &lt;imgui/imanim/im_anim.h&gt;
+  Declares: PillTabBar, PillSelectable, StyledCheckbox, StyledCombo/StyledBeginCombo,
+            BeginAnimatedHeader/BeginAnimatedTreeNode, StyledSlider*, DrawToggle, ToggleFlags
+  Used by: MyChatRenderer.cpp. Calls iam_* tweens on the plugin-owned context (s_iamCtx)
+           that MQMyChat.cpp makes current around the render pass.
+
+MyChatTLO.h
+  #include &lt;mq/Plugin.h&gt;
+  Declares: MyChatChannelType, MyChatType
+
+MyChatChannel.h (data only)
+  Defines: ChatFilter, ChatEvent, ChatChannel, MyChatSettings, constants</div>
+
+  <h2>Cross-Module Call Map</h2>
+  <table>
+    <tr>
+      <th>Caller</th>
+      <th>Callee</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td>MQMyChat.cpp (callbacks)</td>
+      <td>MyChatEngine</td>
+      <td>Initialize, Shutdown, LoadCharacterSettings, ProcessIncomingChat, ProcessWriteChat</td>
+    </tr>
+    <tr>
+      <td>MQMyChat.cpp (callbacks)</td>
+      <td>MyChatRenderer</td>
+      <td>RenderMainWindow, RenderPopOutWindows, RenderSettingsWindow, RenderPresetManager</td>
+    </tr>
+    <tr>
+      <td>MQMyChat.cpp (OnUpdateImGui)</td>
+      <td>imanim (iam_*)</td>
+      <td>iam_context_create/set_current/destroy around the render pass (s_iamCtx)</td>
+    </tr>
+    <tr>
+      <td>MQMyChat.cpp (callbacks)</td>
+      <td>MyChatTLO</td>
+      <td>RegisterMyChatTLO, UnregisterMyChatTLO</td>
+    </tr>
+    <tr>
+      <td>MyChatEngine</td>
+      <td>MyChatDatabase</td>
+      <td>Open, InitSchema, LoadSettings, SaveSettings, LoadGlobalSettings, SaveGlobalSettings, etc.</td>
+    </tr>
+    <tr>
+      <td>MyChatRenderer</td>
+      <td>Core/Widgets (myui)</td>
+      <td>PillTabBar, PillSelectable, StyledCheckbox, StyledBeginCombo, BeginAnimatedHeader</td>
+    </tr>
+    <tr>
+      <td>MyChatRenderer</td>
+      <td>MyChatEngine</td>
+      <td>reads engine.settings, engine.database, engine.charName; calls SaveCharacterSettings, RefreshBlechEvents</td>
+    </tr>
+    <tr>
+      <td>MyChatTLO</td>
+      <td>MyChatEngine</td>
+      <td>reads g_chatEngine-&gt;settings.channels (read-only); calls SendToChannel</td>
+    </tr>
+    <tr>
+      <td>External plugins</td>
+      <td>ChatAPIImpl (via GetPluginInterface)</td>
+      <td>Send/SendToMain/Clear/ChannelExists/etc. delegate to g_chatEngine</td>
+    </tr>
+  </table>
+
+  <h2>Initialization Order</h2>
+
+  <h3>Phase 1: Plugin Load (InitializePlugin, <code>MQMyChat.cpp:36</code>)</h3>
+  <div class="diagram">1. g_chatEngine = new MyChatEngine()  (line 38)
+2. g_chatEngine-&gt;Initialize()  (body at MQMyChat.cpp:377)
+   - Creates MyChatDatabase instance  (line 379)
+   - Sets dbPath to %PathResources%\MyChat.db  (line 380)
+   - database-&gt;Open(dbPath) with WAL mode  (line 394)
+   - database-&gt;InitSchema() creates 8 tables + seeds template preset  (line 395)
+   - Creates main ConsoleWidget  (line 396)
+   - Creates Blech instance with #/| delimiters  (line 398)
+   - Creates LuaJIT state for pattern matching  (lines 399-401)
+3. AddCommand("/mychat", MyChatCommand)  (line 40)
+4. RegisterMyChatTLO()  (line 41)</div>
+
+  <h3>Phase 2: Character Login (SetGameState GAMESTATE_INGAME, <code>MQMyChat.cpp:178</code>)</h3>
+  <div class="diagram">1. LoadCharacterSettings()  (body at MQMyChat.cpp:425)
+   - Gets charName/serverName from pLocalPlayer  (lines 430-431)
+   - database-&gt;GetOrCreatePreset() - creates "Default" if needed  (line 439)
+   - database-&gt;LoadSettings() - channels/events/filters  (line 440)
+   - database-&gt;LoadGlobalSettings() - 13 key-value pairs  (line 441)
+   - database-&gt;LoadCharChannelOverrides()  (line 442)
+   - LoadWindowVisibility() from INI  (line 443)
+   - PopulateDefaultChannels() if empty  (lines 445-446)
+   - Creates ConsoleWidget per channel  (lines 448-452)
+   - RegisterBlechEvents()  (line 459)
+   - SortChannels()  (line 460)
+   - ApplyFontSizes() + ApplyBufferSize()  (lines 461-462)
+   - SaveCharacterSettings()  (line 463)
+   - database-&gt;GetPresetList()  (line 464)</div>
+
+  <h3>Per-Frame: imanim context (OnUpdateImGui, <code>MQMyChat.cpp:202</code>)</h3>
+  <div class="diagram">On the first in-game frame, OnUpdateImGui() creates the plugin-owned imanim context
+(s_iamCtx = iam_context_create(), lines 209-214) with iam_set_lazy_init(false), then each
+frame makes it current around the render pass (iam_context_set_current, line 217) and restores
+the previous context afterward (line 228). It does NOT call iam_update_begin_frame() — the
+host drives imanim's shared clock. This powers the myui styled widgets in Core/Widgets.cpp.</div>
+
+  <div class="note">
+    The imanim context (s_iamCtx) is a plugin-owned animation state machine that persists across frames and is shared
+    with the Core/Widgets styled-widget library. The host (MQ's ImGui integration) drives the global clock, so
+    MQMyChat must not call iam_update_begin_frame(). Instead, MQMyChat sets the context as current for the duration
+    of the render pass, allowing the widgets to queue animations, and then restores the previous context so the host
+    continues its work uninterrupted.
+  </div>
+
+  <h3>Phase 3: Character Logout (SetGameState GAMESTATE_CHARSELECT, <code>MQMyChat.cpp:178</code>)</h3>
+  <div class="diagram">1. UnloadCharacterSettings()  (body at MQMyChat.cpp:488)
+   - SaveCharacterSettings()  (line 493)
+   - UnregisterBlechEvents()  (line 494)
+   - Reset console widgets  (lines 496-497)
+   - settings.channels.clear()  (line 499)</div>
+
+  <h3>Phase 4: Plugin Unload (ShutdownPlugin, <code>MQMyChat.cpp:44</code>)</h3>
+  <div class="diagram">1. UnregisterMyChatTLO()  (line 46)
+2. RemoveCommand("/mychat")  (line 47)
+3. g_chatEngine-&gt;Shutdown()  (line 48) - closes DB, destroys Lua state
+4. delete g_chatEngine  (line 49)
+5. iam_context_destroy(s_iamCtx)  (line 56) - removes our context from imanim's global list so
+   the host's next per-frame update never walks a freed pointer
+
+Note: GetPluginInterface() (the exported ChatAPI, MQMyChat.cpp:173) is resolved by MQ's
+loader at plugin-load time, independent of the phases above. See plugin-api.md.</div>
+
+  <h2>Global State</h2>
+  <table>
+    <tr>
+      <th>Variable</th>
+      <th>Type</th>
+      <th>File:Line</th>
+      <th>Scope</th>
+      <th>Purpose</th>
+    </tr>
+    <tr>
+      <td><code>g_chatEngine</code></td>
+      <td><code>MyChatEngine*</code></td>
+      <td><code>MQMyChat.h:109</code> / <code>MQMyChat.cpp:24</code></td>
+      <td>extern</td>
+      <td>Singleton engine instance</td>
+    </tr>
+    <tr>
+      <td><code>s_renderer</code></td>
+      <td><code>MyChatRenderer</code></td>
+      <td><code>MQMyChat.cpp:23</code></td>
+      <td>static (file)</td>
+      <td>Singleton renderer</td>
+    </tr>
+    <tr>
+      <td><code>s_iamCtx</code></td>
+      <td><code>iam_context*</code></td>
+      <td><code>MQMyChat.cpp:32</code></td>
+      <td>static (file)</td>
+      <td>Plugin-owned imanim context for the myui styled widgets; created on first OnUpdateImGui (lazy-init off), made current around the render pass, destroyed in ShutdownPlugin</td>
+    </tr>
+    <tr>
+      <td><code>s_chatAPI</code></td>
+      <td><code>ChatAPIImpl</code></td>
+      <td><code>MQMyChat.cpp:170</code></td>
+      <td>static (anon ns)</td>
+      <td>Exported ChatAPI instance (see plugin-api.md)</td>
+    </tr>
+    <tr>
+      <td><code>pMyChatChannelType</code></td>
+      <td><code>MyChatChannelType*</code></td>
+      <td><code>MyChatTLO.h:48</code> / <code>MyChatTLO.cpp:4</code></td>
+      <td>extern</td>
+      <td>TLO channel type</td>
+    </tr>
+    <tr>
+      <td><code>pMyChatType</code></td>
+      <td><code>MyChatType*</code></td>
+      <td><code>MyChatTLO.h:49</code> / <code>MyChatTLO.cpp:5</code></td>
+      <td>extern</td>
+      <td>TLO main type</td>
+    </tr>
+  </table>
+
+  <h2>MyChatEngine Key Members</h2>
+  <table>
+    <tr>
+      <th>Member</th>
+      <th>Type</th>
+      <th>Purpose</th>
+    </tr>
+    <tr>
+      <td><code>database</code></td>
+      <td><code>unique_ptr&lt;MyChatDatabase&gt;</code></td>
+      <td>SQLite connection</td>
+    </tr>
+    <tr>
+      <td><code>m_blech</code></td>
+      <td><code>unique_ptr&lt;Blech&gt;</code></td>
+      <td>Pattern matcher</td>
+    </tr>
+    <tr>
+      <td><code>m_blechEventMap</code></td>
+      <td><code>unordered_map&lt;uint, BlechEventData&gt;</code></td>
+      <td>Event ID to channel/event mapping</td>
+    </tr>
+    <tr>
+      <td><code>m_claimedLines</code></td>
+      <td><code>unordered_map&lt;string, ClaimedLine&gt;</code></td>
+      <td>Duplicate prevention (500ms TTL)</td>
+    </tr>
+    <tr>
+      <td><code>m_luaState</code></td>
+      <td><code>lua_State*</code></td>
+      <td>LuaJIT for pattern matching</td>
+    </tr>
+    <tr>
+      <td><code>m_currentLine / m_currentColor</code></td>
+      <td><code>const char* / int</code></td>
+      <td>Current line being processed (set during Feed)</td>
+    </tr>
+    <tr>
+      <td><code>settings</code></td>
+      <td><code>MyChatSettings</code></td>
+      <td>All channel and global settings</td>
+    </tr>
+    <tr>
+      <td><code>mainConsole</code></td>
+      <td><code>shared_ptr&lt;ConsoleWidget&gt;</code></td>
+      <td>Main window console</td>
+    </tr>
+    <tr>
+      <td><code>sortedChannels</code></td>
+      <td><code>vector&lt;SortedChannel&gt;</code></td>
+      <td>Tab-order sorted channel list</td>
+    </tr>
+    <tr>
+      <td><code>activePresetId / activePresetName</code></td>
+      <td><code>int / string</code></td>
+      <td>Current preset</td>
+    </tr>
+    <tr>
+      <td><code>charName / serverName / dbPath</code></td>
+      <td><code>string</code></td>
+      <td>Runtime context</td>
+    </tr>
+    <tr>
+      <td><code>showMainWindow / showSettingsWindow / showPresetManager</code></td>
+      <td><code>bool</code></td>
+      <td>UI visibility flags (MQMyChat.h:84/85/91)</td>
+    </tr>
+  </table>
+
+  <h2>Thread Safety Notes</h2>
+  <p>
+    No explicit synchronization (mutex/lock) in any module. All MQ callbacks (OnIncomingChat, OnWriteChatColor,
+    OnUpdateImGui, OnPulse) run on the MQ main thread. Database protected by SQLite WAL mode; transactions used
+    for batch writes. m_claimedLines accessed in ProcessIncomingChat and CleanExpiredClaims (both main thread).
+    BlechCallback is synchronous during Feed() call. ConsoleWidget may have internal synchronization.
+  </p>
+
+  <div class="page-nav">
+    <a href="index.html">&larr; Overview</a>
+    <span> | </span>
+    <a href="types.html">Next &rarr; Types &amp; Constants</a>
+  </div>
+</div>
+</body>
+</html>

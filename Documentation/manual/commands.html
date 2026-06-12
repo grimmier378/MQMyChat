@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commands &amp; TLO - MQMyChat User Manual</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat User Manual</h2>
+  <a href="index.html">Welcome</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="main-window.html">Main Window</a>
+  <a href="channels-and-events.html">Channels &amp; Events</a>
+  <a href="presets.html">Presets</a>
+  <a href="settings.html">Settings &amp; Options</a>
+  <a href="commands.html" class="active">Commands &amp; TLO</a>
+</nav>
+<div class="content">
+  <h1>Commands &amp; TLO</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>Slash commands for controlling MQMyChat and TLO (Top-Level Object) access for macros and Lua scripts.</p>
+
+  <h2>Slash Commands</h2>
+  <p>All commands use <code>/mychat</code> followed by a subcommand:</p>
+
+  <table>
+    <tr><th>Command</th><th>What It Does</th></tr>
+    <tr>
+      <td><code>/mychat</code> or <code>/mychat show</code></td>
+      <td>Opens the main chat window</td>
+    </tr>
+    <tr>
+      <td><code>/mychat hide</code></td>
+      <td>Closes the main chat window</td>
+    </tr>
+    <tr>
+      <td><code>/mychat send &lt;channel&gt; &lt;message&gt;</code></td>
+      <td>Sends a message directly to a specific channel's console (doesn't use the channel's echo command &mdash; the text appears in the channel but isn't sent to EQ chat)</td>
+    </tr>
+    <tr>
+      <td><code>/mychat clear</code></td>
+      <td>Clears the main console</td>
+    </tr>
+    <tr>
+      <td><code>/mychat clear &lt;channel&gt;</code></td>
+      <td>Clears a specific channel's console</td>
+    </tr>
+    <tr>
+      <td><code>/mychat config</code></td>
+      <td>Opens/closes the Config GUI</td>
+    </tr>
+    <tr>
+      <td><code>/mychat reload</code></td>
+      <td>Reloads all character settings from the database</td>
+    </tr>
+    <tr>
+      <td><code>/mychat lock</code></td>
+      <td>Locks the window (prevents moving and resizing)</td>
+    </tr>
+    <tr>
+      <td><code>/mychat unlock</code></td>
+      <td>Unlocks the window</td>
+    </tr>
+    <tr>
+      <td><code>/mychat preset &lt;name&gt;</code></td>
+      <td>Switches to the named preset</td>
+    </tr>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code>/mychat show
+/mychat send Combat Testing 1 2 3
+/mychat clear Tells
+/mychat preset MyRaidSetup
+/mychat lock</code></pre>
+
+  <h2>TLO Access (for Macros)</h2>
+  <p>MQMyChat exposes a <code>${MyChat}</code> TLO that macros can use to query channel information and send messages.</p>
+
+  <h3>Reading Information</h3>
+  <table>
+    <tr><th>TLO Expression</th><th>Returns</th><th>Description</th></tr>
+    <tr>
+      <td><code>${MyChat.Version}</code></td>
+      <td>Number</td>
+      <td>Plugin version (e.g., 0.1)</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.ChannelCount}</code></td>
+      <td>Number</td>
+      <td>How many channels exist</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].Name}</code></td>
+      <td>Text</td>
+      <td>Channel name (by name lookup)</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[2].Name}</code></td>
+      <td>Text</td>
+      <td>Channel name (by ID lookup)</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].ID}</code></td>
+      <td>Number</td>
+      <td>Channel ID number</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].Enabled}</code></td>
+      <td>TRUE/FALSE</td>
+      <td>Whether the channel is active</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].TabOrder}</code></td>
+      <td>Number</td>
+      <td>Tab position</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].PopOut}</code></td>
+      <td>TRUE/FALSE</td>
+      <td>Whether the channel has a pop-out window</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].Echo}</code></td>
+      <td>Text</td>
+      <td>Default slash command (e.g., /say)</td>
+    </tr>
+    <tr>
+      <td><code>${MyChat.Channel[Combat].MainEnable}</code></td>
+      <td>TRUE/FALSE</td>
+      <td>Whether shown in Main tab</td>
+    </tr>
+  </table>
+
+  <h3>Sending Messages</h3>
+  <table>
+    <tr><th>TLO Expression</th><th>Returns</th><th>Description</th></tr>
+    <tr>
+      <td><code>${MyChat.Send[Combat,Hello World]}</code></td>
+      <td>TRUE/FALSE</td>
+      <td>Sends "Hello World" to the Combat channel</td>
+    </tr>
+  </table>
+  <p>The format is <code>${MyChat.Send[channelName,message]}</code> where the channel name and message are separated by a comma.</p>
+
+  <h3>Macro Examples</h3>
+  <pre><code>/if (${MyChat.Channel[Combat].Enabled}) {
+    /echo Combat channel is active
+}
+
+/if (${MyChat.ChannelCount} > 0) {
+    /echo MQMyChat has ${MyChat.ChannelCount} channels
+}
+
+/echo ${MyChat.Send[Combat,Raid assist on ${Target.CleanName}]}</code></pre>
+
+  <h2>Lua Access</h2>
+  <p>From Lua scripts, access MQMyChat through the standard MQ TLO interface:</p>
+  <pre><code>local mq = require('mq')
+
+-- Read channel info
+local version = mq.TLO.MyChat.Version()
+local count = mq.TLO.MyChat.ChannelCount()
+local combatEnabled = mq.TLO.MyChat.Channel("Combat").Enabled()
+local combatName = mq.TLO.MyChat.Channel("Combat").Name()
+
+-- Send a message to a channel
+mq.TLO.MyChat.Send("Combat,Hello from Lua!")
+
+-- Check if a channel exists and is enabled
+if mq.TLO.MyChat.Channel("Tells").Enabled() then
+    print("Tells channel is active")
+end</code></pre>
+
+  <div class="note">
+    The TLO is <strong>read-only</strong> for channel properties. You can read channel names, IDs, enabled status, etc., but you cannot change settings through the TLO. The only action you can take is <code>Send</code>, which adds text to a channel's console.
+  </div>
+
+  <div class="page-nav">
+    <a href="settings.html">&larr; Previous: Settings &amp; Options</a>
+    <span></span>
+  </div>
+</div>
+</body>
+</html>

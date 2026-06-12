@@ -411,18 +411,20 @@ m_claimedLines[lineStr] = ClaimedLine{
 </p>
 
 <p>
-    <code>SubstituteTokens</code> takes a pattern string and the current chat line, performs
-    one token replacement, and returns the result. Only the <strong>first</strong> token found
-    is replaced (the method returns early after each substitution). This means you cannot
-    combine multiple different tokens in a single filter pattern. For example,
+    <code>SubstituteTokens</code> takes a pattern string and the current chat line, substitutes
+    one token <em>type</em>, and returns the result. The method walks an elseif chain (matching
+    the Lua client) and returns early after the first token type it finds &mdash; so you cannot
+    combine multiple <em>different</em> tokens in a single filter pattern. For example,
     <code>M3 hits N3</code> would only resolve <code>M3</code> and leave
-    <code>N3</code> as literal text. If you need to match on multiple dynamic values,
-    use separate filters.
+    <code>N3</code> as literal text. That one token type, however, is replaced at
+    <strong>every</strong> word-boundary occurrence in the pattern (via <code>ReplaceTokenWB</code>),
+    not just the first. If you need to match on multiple dynamic values, use separate filters.
 </p>
 
 <p>
     Tokens are checked in this order: M3, PT1, PT3, M1, TK1, P3, N3, RL, G1 through G5,
-    H1, GP1. The first token found in the pattern string is the one that gets substituted.
+    H1, GP1. The first token <em>type</em> found in the pattern string is the one that gets
+    substituted; all of its occurrences are then replaced.
 </p>
 
 <h3>Token reference</h3>
@@ -583,74 +585,57 @@ m_claimedLines[lineStr] = ClaimedLine{
     While Blech handles the first pass (event matching), <code>PatternFind</code> is the
     workhorse behind the second pass. After <code>MatchFilter</code> strips the
     <code>NO2</code> prefix and substitutes tokens, it calls <code>PatternFind</code> to
-    check whether the resulting pattern string appears in the chat line. This function
-    supports three modes, tried in this order:
+    check whether the resulting pattern string matches the chat line.
 </p>
-
-<h3>Mode 1: Lua patterns</h3>
 
 <p>
-    If the pattern contains a <code>%</code> character, it is treated as a Lua pattern and
-    executed via the embedded LuaJIT state:
+    <strong>Every</strong> filter is matched as a Lua pattern via the embedded LuaJIT state &mdash;
+    the same behavior as the Lua MyChat client. There is no <code>%</code>-detection, no separate
+    plain-substring path, and no special-cased <code>^</code> anchor handling; the old
+    <code>IsLuaPattern</code> helper has been removed. The pattern is handed straight to
+    <code>string.find</code>:
 </p>
 
-<pre><code>if (IsLuaPattern(pattern) && m_luaState)
+<pre><code>if (pattern.empty())
+    return true;
+
+if (m_luaState)
 {
     lua_getglobal(m_luaState, "string");
     lua_getfield(m_luaState, -1, "find");
     lua_pushstring(m_luaState, text.c_str());
     lua_pushstring(m_luaState, pattern.c_str());
     int status = lua_pcall(m_luaState, 2, 1, 0);
-    bool found = (status == 0 && !lua_isnil(m_luaState, -1));
+    bool found = (status == 0 &amp;&amp; !lua_isnil(m_luaState, -1));
     lua_settop(m_luaState, 0);
     return found;
-}</code></pre>
+}
+
+return text.find(pattern) != std::string::npos; // fallback only if Lua is unavailable</code></pre>
 
 <p>
-    This gives you access to Lua's pattern language: <code>%d</code> for digits,
-    <code>%a</code> for letters, <code>%]</code> for literal brackets, character classes
-    like <code>[%a%d]</code>, and so on.
+    Because matching goes through Lua, the full Lua pattern language is available:
+    <code>%d</code> for digits, <code>%a</code> for letters, character classes like
+    <code>[%a%d]</code>, and so on. A leading <code>^</code> is a native Lua start-anchor
+    (handled by Lua itself, not special-cased by the plugin). The literal
+    <code>std::string::find()</code> at the bottom is only a degraded fallback used when the
+    Lua state failed to initialize.
 </p>
 
-<div class="note">
-    <strong>Detection rule:</strong> <code>IsLuaPattern</code> checks whether a
-    <code>%</code> character appears anywhere in the pattern except as the very last
-    character. A trailing <code>%</code> by itself does not trigger Lua mode. However, if
-    your filter accidentally contains a <code>%</code> elsewhere (for example in a URL like
-    <code>%20</code>), it will be treated as a Lua pattern.
+<div class="warning">
+    <strong>Matching is CASE-SENSITIVE.</strong> <code>PatternFind</code> lowercases nothing,
+    so your pattern must use the exact case EverQuest emits (this matches the Lua client).
+    Also, the Lua magic characters <code>% ( ) . + - * ? [ ]</code> are <em>special</em>; to
+    match one literally, escape it with a leading <code>%</code> (for example, write
+    <code>50%%</code> to match a literal "50%").
 </div>
-
-<h3>Mode 2: Anchored match</h3>
-
-<p>
-    If the pattern starts with <code>^</code>, it checks whether the line starts with the
-    remaining text:
-</p>
-
-<pre><code>if (!pattern.empty() && pattern[0] == '^')
-{
-    std::string anchor = pattern.substr(1);
-    if (anchor.empty())
-        return true;
-    return text.size() >= anchor.size()
-        && text.compare(0, anchor.size(), anchor) == 0;
-}</code></pre>
-
-<h3>Mode 3: Plain substring</h3>
-
-<p>
-    The default. A simple <code>std::string::find()</code> &mdash; returns true if the pattern
-    appears anywhere in the line:
-</p>
-
-<pre><code>return text.find(pattern) != std::string::npos;</code></pre>
 
 <h3>Summary</h3>
 
 <table>
     <tr>
         <th>Pattern</th>
-        <th>Mode</th>
+        <th>Interpreted as</th>
         <th>Matches</th>
     </tr>
     <tr>
@@ -660,13 +645,13 @@ m_claimedLines[lineStr] = ClaimedLine{
     </tr>
     <tr>
         <td><code>^You</code></td>
-        <td>Anchored</td>
-        <td>Lines starting with "You"</td>
+        <td>Lua pattern (anchored)</td>
+        <td>Lines starting with "You" &mdash; exact case</td>
     </tr>
     <tr>
         <td><code>tells you,</code></td>
-        <td>Plain substring</td>
-        <td>Any line containing "tells you,"</td>
+        <td>Lua pattern (plain text)</td>
+        <td>Any line containing "tells you," &mdash; exact case</td>
     </tr>
 </table>
 

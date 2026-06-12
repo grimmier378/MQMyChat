@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Database - MQMyChat Dev Docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <h2>MQMyChat Dev Docs</h2>
+  <ul>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="types.html">Types &amp; Constants</a></li>
+    <li><a href="chat-routing.html">Chat Routing</a></li>
+    <li><a href="database.html" class="active">Database</a></li>
+    <li><a href="renderer.html">Renderer</a></li>
+    <li><a href="plugin-api.html">Plugin API</a></li>
+    <li><a href="tlo.html">TLO</a></li>
+    <li><a href="building.html">Building</a></li>
+  </ul>
+</nav>
+<div class="content">
+  <h1>Database</h1>
+  <p><em>Last Updated: 2026-06-11</em></p>
+  <p>SQLite persistence layer: schema, load/save flows, presets, per-character overrides, and transactional writes with RAII rollback.</p>
+
+  <h2>Connection</h2>
+  <table>
+    <tr><th>Property</th><th>Value</th></tr>
+    <tr><td>Path</td><td><code>%PathResources%\MyChat.db</code></td></tr>
+    <tr><td>Mode</td><td>WAL (Write-Ahead Logging) for concurrent read/write</td></tr>
+    <tr><td>PRAGMAs</td><td>WAL mode, foreign keys ON, busy_timeout 3000ms</td></tr>
+    <tr><td>Open</td><td><code>MyChatDatabase::Open()</code> (<code>MyChatDatabase.cpp:10</code>)</td></tr>
+    <tr><td>Close</td><td><code>MyChatDatabase::Close()</code> with WAL checkpoint</td></tr>
+  </table>
+
+  <div class="note">
+    The schema is designed to match the Lua MyChat plugin's database for cross-compatibility between C++ and Lua versions.
+  </div>
+
+  <h2>Schema (8 Tables)</h2>
+
+  <pre><code>CREATE TABLE schema_version (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  preset_name TEXT NOT NULL,
+  server TEXT NOT NULL DEFAULT '',
+  description TEXT DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(preset_name, server)
+);
+
+CREATE TABLE channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  preset_id INTEGER NOT NULL,
+  channel_id INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT 'New',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  echo TEXT NOT NULL DEFAULT '/say',
+  main_enable INTEGER NOT NULL DEFAULT 1,
+  enable_links INTEGER NOT NULL DEFAULT 0,
+  pop_out INTEGER NOT NULL DEFAULT 0,
+  locked INTEGER NOT NULL DEFAULT 0,
+  scale REAL NOT NULL DEFAULT 1.0,
+  main_font_size INTEGER NOT NULL DEFAULT 16,
+  tab_order INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(preset_id, channel_id),
+  FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);
+
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_row_id INTEGER NOT NULL,
+  event_index INTEGER NOT NULL,
+  event_string TEXT NOT NULL DEFAULT 'new',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(channel_row_id, event_index),
+  FOREIGN KEY (channel_row_id) REFERENCES channels(id) ON DELETE CASCADE
+);
+
+CREATE TABLE filters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_row_id INTEGER NOT NULL,
+  filter_index INTEGER NOT NULL,
+  filter_string TEXT NOT NULL DEFAULT '',
+  color_r REAL NOT NULL DEFAULT 1.0,
+  color_g REAL NOT NULL DEFAULT 1.0,
+  color_b REAL NOT NULL DEFAULT 1.0,
+  color_a REAL NOT NULL DEFAULT 1.0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(event_row_id, filter_index),
+  FOREIGN KEY (event_row_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE TABLE global_settings (
+  char_name TEXT NOT NULL,
+  server TEXT NOT NULL DEFAULT '',
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (char_name, server, key)
+);
+
+CREATE TABLE char_active_preset (
+  char_name TEXT NOT NULL,
+  server TEXT NOT NULL DEFAULT '',
+  preset_id INTEGER NOT NULL,
+  PRIMARY KEY (char_name, server),
+  FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);
+
+CREATE TABLE char_channel_overrides (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  char_name TEXT NOT NULL,
+  server TEXT NOT NULL DEFAULT '',
+  preset_id INTEGER NOT NULL,
+  channel_id INTEGER NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  echo TEXT NOT NULL DEFAULT '/say',
+  main_enable INTEGER NOT NULL DEFAULT 1,
+  enable_links INTEGER NOT NULL DEFAULT 0,
+  pop_out INTEGER NOT NULL DEFAULT 0,
+  locked INTEGER NOT NULL DEFAULT 0,
+  scale REAL NOT NULL DEFAULT 1.0,
+  main_font_size INTEGER NOT NULL DEFAULT 16,
+  tab_order INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(char_name, server, preset_id, channel_id),
+  FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+);
+
+INDEX idx_channels_preset ON channels(preset_id);
+INDEX idx_events_channel ON events(channel_row_id);
+INDEX idx_filters_event ON filters(event_row_id);
+INDEX idx_char_channel_overrides_lookup ON char_channel_overrides(char_name, server, preset_id);</code></pre>
+
+  <h3>Schema Notes</h3>
+  <ul>
+    <li><strong>presets</strong>: Template preset uses <code>id=-1</code>. UNIQUE constraint on (preset_name, server).</li>
+    <li><strong>channels</strong>: User-facing channel ID (0, 1, 2...) distinct from row ID. Linked to preset.</li>
+    <li><strong>events</strong>: Blech patterns (e.g., "#*#heals#*#") matched against chat lines.</li>
+    <li><strong>filters</strong>: Color + visibility rules per event. filter_index 0 = default, 1+ = conditional.</li>
+    <li><strong>filters colors</strong>: Stored as float 0.0-1.0, converted to uint8 0-255 on load/save via <code>ImColor</code>.</li>
+    <li><strong>global_settings</strong>: 13 keys per (char_name, server): locked, timeStamps, Scale, themeIdx, doLinks, mainEcho, MainFontSize, LogCommands, keyFocus, keyName, localEcho, autoScroll, maxBufferLines.</li>
+    <li><strong>char_channel_overrides</strong>: Per-character channel property overrides (enabled, echo, main_enable, enable_links, pop_out, locked, scale, main_font_size, tab_order).</li>
+  </ul>
+
+  <h2>Entity Relationship</h2>
+  <div class="diagram">presets
+│
+├──&lt; channels (preset_id FK)
+│   │
+│   ├──&lt; events (channel_row_id FK)
+│   │   │
+│   │   └──&lt; filters (event_row_id FK)
+│   │
+│   └── char_channel_overrides (preset_id + channel_id)
+│
+├── char_active_preset (preset_id FK)
+│
+└── global_settings (per char/server, not linked to preset)</div>
+
+  <h2>Load Sequence</h2>
+  <p><code>LoadCharacterSettings()</code> (MQMyChat.cpp:425+):</p>
+  <div class="diagram">1. GetOrCreatePreset(server, charName)              MyChatDatabase.cpp:241
+   ├── Query active preset from char_active_preset
+   ├── If not found: INSERT "Default" preset
+   └── SetActivePreset() → INSERT/REPLACE char_active_preset
+2. LoadSettings(presetId, settings)                MyChatDatabase.cpp:374
+   ├── SELECT channels WHERE preset_id=?
+   ├── For each channel: SELECT events WHERE channel_row_id=?
+   └── For each event: SELECT filters WHERE event_row_id=? (colors converted float→uint8)
+3. LoadGlobalSettings(server, charName)            MyChatDatabase.cpp:610
+   └── SELECT key,value FROM global_settings WHERE char_name=? AND server=?
+4. LoadCharChannelOverrides(...)                   MyChatDatabase.cpp:701
+   └── SELECT * FROM char_channel_overrides WHERE ... → override channel fields</div>
+
+  <h2>Save Sequence</h2>
+  <p><code>SaveCharacterSettings()</code> (MQMyChat.cpp:477+):</p>
+  <div class="diagram">1. SyncFontSizes()                               MQMyChat.cpp:781
+   └── Read current sizes from ConsoleWidget Zep editors
+2. SaveCharChannelOverrides() [TRANSACTION]      MyChatDatabase.cpp:739
+   ├── TransactionGuard begins transaction
+   ├── DELETE FROM char_channel_overrides WHERE (char, server, preset_id)
+   ├── INSERT for each channel override
+   └── On success: commit(); on failure: automatic rollback()
+3. SaveGlobalSettings() [TRANSACTION]            MyChatDatabase.cpp:656
+   ├── TransactionGuard begins transaction
+   ├── INSERT/REPLACE 13 key-value pairs
+   └── On success: commit(); on failure: automatic rollback()
+4. SaveWindowVisibility()                        MQMyChat.cpp:526
+   └── WritePrivateProfileBool to INI file (separate from DB)</div>
+
+  <h2>Transaction Safety</h2>
+
+  <div class="note">
+    <strong>RAII TransactionGuard (MyChatDatabase.h:41):</strong> All four transactional writes—<code>SaveSettings</code>, <code>SaveGlobalSettings</code>, <code>SaveCharChannelOverrides</code>, and <code>SeedDefaultChannels</code>—use a private RAII pattern:
+    <ul>
+      <li><code>TransactionGuard(this)</code> issues <code>BEGIN TRANSACTION</code> on construction.</li>
+      <li>Destructor issues <code>ROLLBACK</code> unless <code>commit()</code> was called.</li>
+      <li>Each function tracks a local <code>bool ok</code>, set false on any <code>PrepareAndStep</code>, <code>sqlite3_step</code>, or <code>ExecSQL</code> failure.</li>
+      <li><code>ExecSQL</code> (MyChatDatabase.cpp:42) returns <code>bool</code> to surface failures.</li>
+      <li>Only calls <code>tx.commit()</code> when <code>ok</code> is still true.</li>
+    </ul>
+    <strong>Result:</strong> A failed delete-and-reinsert rolls back entirely instead of leaving a half-rebuilt preset or corrupted overrides.
+  </div>
+
+  <h2>Preset Operations</h2>
+  <table>
+    <tr><th>Operation</th><th>Method</th><th>Line</th><th>Behavior</th></tr>
+    <tr><td>Create default</td><td>GetOrCreatePreset</td><td>241</td><td>Creates "Default" if none active</td></tr>
+    <tr><td>List</td><td>GetPresetList</td><td>275</td><td>SELECT all presets for server</td></tr>
+    <tr><td>Save as new</td><td>SaveAsNewPreset</td><td>298</td><td>INSERT new preset, then SaveSettings (transactional)</td></tr>
+    <tr><td>Copy</td><td>CopyPreset</td><td>322</td><td>Load source, INSERT new, SaveSettings to new (transactional)</td></tr>
+    <tr><td>Rename</td><td>RenamePreset</td><td>348</td><td>UPDATE preset_name</td></tr>
+    <tr><td>Delete</td><td>DeletePreset</td><td>360</td><td>DELETE cascades via FK to channels/events/filters</td></tr>
+    <tr><td>Create blank</td><td>CreateBlankPreset</td><td>941</td><td>INSERT empty preset</td></tr>
+    <tr><td>Seed defaults</td><td>SeedDefaultChannels</td><td>810</td><td>Bulk INSERT Consider/Combat/etc. with 50+ pre-configured events (transactional)</td></tr>
+  </table>
+
+  <h3>Preset Switch Flow (UI-triggered)</h3>
+  <ol>
+    <li><code>SaveCharacterSettings()</code> &mdash; persist current preset's channels and overrides</li>
+    <li><code>database-&gt;SetActivePreset(server, charName, newPresetId)</code> &mdash; update char_active_preset</li>
+    <li><code>UnloadCharacterSettings()</code> &mdash; clear in-memory settings</li>
+    <li><code>LoadCharacterSettings()</code> &mdash; load new preset</li>
+  </ol>
+
+  <h2>Schema Versioning &amp; Migrations</h2>
+  <ul>
+    <li><strong>Version storage:</strong> Single row in <code>schema_version</code> table (id=1).</li>
+    <li><strong>RunMigrations()</strong> (<code>MyChatDatabase.cpp:99</code>): Applies incremental migrations per version.</li>
+    <li><strong>GetSchemaVersion()</strong> / <strong>SetSchemaVersion()</strong>: Query/update version number.</li>
+    <li><strong>Current version:</strong> 1 (includes char_channel_overrides table and all indexes).</li>
+  </ul>
+
+  <h2>Window Visibility (INI)</h2>
+  <div class="tip">
+    Window visibility is stored in INI files, not the database.<br>
+    Path: <code>%PathConfig%\MQMyChat\{server}\{charName}.ini</code><br>
+    Managed by <code>LoadWindowVisibility()</code> / <code>SaveWindowVisibility()</code> using MQ INI functions (separate from DB transactions).
+  </div>
+
+  <h2>Per-Character Overrides</h2>
+  <p>The <code>char_channel_overrides</code> table allows each character to override channel properties without modifying the shared preset:</p>
+  <ul>
+    <li><strong>When to use:</strong> Player customizes a channel within an active preset (e.g., disables a channel, changes font size, adjusts echo command).</li>
+    <li><strong>Load order:</strong> Base channel properties come from <code>channels</code> table, then <code>LoadCharChannelOverrides</code> applies matching overrides.</li>
+    <li><strong>Save:</strong> <code>SaveCharChannelOverrides</code> (transactional) deletes all current overrides and re-inserts the full set.</li>
+    <li><strong>Cascade:</strong> FK to presets ensures overrides are deleted if a preset is deleted.</li>
+  </ul>
+
+  <div class="page-nav">
+    <a href="chat-routing.html">&larr; Previous: Chat Routing</a>
+    <a href="renderer.html">Next: Renderer &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

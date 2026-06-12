@@ -901,22 +901,12 @@ void MyChatEngine::CleanExpiredClaims()
 	}
 }
 
-static bool IsLuaPattern(const std::string& pattern)
-{
-	for (size_t i = 0; i + 1 < pattern.size(); ++i)
-	{
-		if (pattern[i] == '%')
-			return true;
-	}
-	return false;
-}
-
 bool MyChatEngine::PatternFind(const std::string& text, const std::string& pattern) const
 {
 	if (pattern.empty())
 		return true;
 
-	if (IsLuaPattern(pattern) && m_luaState)
+	if (m_luaState)
 	{
 		lua_getglobal(m_luaState, "string");
 		lua_getfield(m_luaState, -1, "find");
@@ -926,14 +916,6 @@ bool MyChatEngine::PatternFind(const std::string& text, const std::string& patte
 		bool found = (status == 0 && !lua_isnil(m_luaState, -1));
 		lua_settop(m_luaState, 0);
 		return found;
-	}
-
-	if (!pattern.empty() && pattern[0] == '^')
-	{
-		std::string anchor = pattern.substr(1);
-		if (anchor.empty())
-			return true;
-		return text.size() >= anchor.size() && text.compare(0, anchor.size(), anchor) == 0;
 	}
 
 	return text.find(pattern) != std::string::npos;
@@ -1012,6 +994,51 @@ static std::string GetPetName()
 	return "NO PET";
 }
 
+static bool IsTokenWordChar(char c)
+{
+	return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
+
+static bool IsTokenBoundedAt(const std::string& str, const std::string& token, size_t pos)
+{
+	bool leftOk = (pos == 0) || !IsTokenWordChar(str[pos - 1]);
+	size_t end = pos + token.length();
+	bool rightOk = (end >= str.size()) || !IsTokenWordChar(str[end]);
+	return leftOk && rightOk;
+}
+
+static bool ContainsTokenWB(const std::string& str, const std::string& token)
+{
+	size_t pos = 0;
+	while ((pos = str.find(token, pos)) != std::string::npos)
+	{
+		if (IsTokenBoundedAt(str, token, pos))
+			return true;
+		pos += 1;
+	}
+	return false;
+}
+
+static bool ReplaceTokenWB(std::string& str, const std::string& token, const std::string& value)
+{
+	bool any = false;
+	size_t pos = 0;
+	while ((pos = str.find(token, pos)) != std::string::npos)
+	{
+		if (IsTokenBoundedAt(str, token, pos))
+		{
+			str.replace(pos, token.length(), value);
+			pos += value.length();
+			any = true;
+		}
+		else
+		{
+			pos += 1;
+		}
+	}
+	return any;
+}
+
 std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std::string& line) const
 {
 	if (!pLocalPlayer)
@@ -1020,23 +1047,21 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 	std::string result = pattern;
 
 	auto replace = [&](const std::string& token, const std::string& value) -> bool {
-		size_t pos = result.find(token);
-		if (pos != std::string::npos)
-		{
-			result.replace(pos, token.length(), value);
-			return true;
-		}
-		return false;
+		return ReplaceTokenWB(result, token, value);
+	};
+
+	auto containsToken = [&](const std::string& token) -> bool {
+		return ContainsTokenWB(result, token);
 	};
 
 	if (replace("M3", pLocalPlayer->Name)) return result;
 
-	if (result.find("PT1") != std::string::npos)
+	if (containsToken("PT1"))
 	{
 		if (replace("PT1", GetPetName())) return result;
 	}
 
-	if (result.find("PT3") != std::string::npos)
+	if (containsToken("PT3"))
 	{
 		auto [isNPC, npcName] = ExtractNameFromLine(line);
 		if (!npcName.empty())
@@ -1073,7 +1098,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		return result;
 	}
 
-	if (result.find("M1") != std::string::npos)
+	if (containsToken("M1"))
 	{
 		std::string maName = "NO MA";
 		if (pLocalPC && pLocalPC->pGroupInfo)
@@ -1093,7 +1118,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		if (replace("M1", maName)) return result;
 	}
 
-	if (result.find("TK1") != std::string::npos)
+	if (containsToken("TK1"))
 	{
 		std::string tankName = "NO TANK";
 		if (pLocalPC && pLocalPC->pGroupInfo)
@@ -1113,7 +1138,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		if (replace("TK1", tankName)) return result;
 	}
 
-	if (result.find("P3") != std::string::npos)
+	if (containsToken("P3"))
 	{
 		auto [isNPC, pcName] = ExtractNameFromLine(line);
 		if (!isNPC && !pcName.empty() && pcName != GetPetName())
@@ -1123,7 +1148,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		return result;
 	}
 
-	if (result.find("N3") != std::string::npos)
+	if (containsToken("N3"))
 	{
 		auto [isNPC, npcName] = ExtractNameFromLine(line);
 		if (!isNPC && !npcName.empty())
@@ -1148,7 +1173,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		return result;
 	}
 
-	if (result.find("RL") != std::string::npos)
+	if (containsToken("RL"))
 	{
 		std::string rlName = "NO RAID";
 		if (pRaid && pRaid->RaidLeaderName[0])
@@ -1159,7 +1184,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 	for (int i = 1; i <= 5; ++i)
 	{
 		std::string token = fmt::format("G{}", i);
-		if (result.find(token) != std::string::npos)
+		if (containsToken(token))
 		{
 			std::string memberName = "NO GROUP";
 			if (pLocalPC && pLocalPC->pGroupInfo)
@@ -1171,7 +1196,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		}
 	}
 
-	if (result.find("H1") != std::string::npos)
+	if (containsToken("H1"))
 	{
 		if (pLocalPC && pLocalPC->pGroupInfo)
 		{
@@ -1185,9 +1210,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 				if (classId == Cleric || classId == Druid || classId == Shaman)
 				{
 					std::string tryResult = result;
-					size_t pos = tryResult.find("H1");
-					if (pos != std::string::npos)
-						tryResult.replace(pos, 2, pMember->GetName());
+					ReplaceTokenWB(tryResult, "H1", pMember->GetName());
 					if (PatternFind(line, tryResult))
 						return tryResult;
 				}
@@ -1197,7 +1220,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 		return result;
 	}
 
-	if (result.find("GP1") != std::string::npos)
+	if (containsToken("GP1"))
 	{
 		if (pLocalPC && pLocalPC->pGroupInfo)
 		{
@@ -1206,9 +1229,7 @@ std::string MyChatEngine::SubstituteTokens(const std::string& pattern, const std
 				CGroupMember* pMember = pLocalPC->pGroupInfo->GetGroupMember(g);
 				if (!pMember) continue;
 				std::string tryResult = result;
-				size_t pos = tryResult.find("GP1");
-				if (pos != std::string::npos)
-					tryResult.replace(pos, 3, pMember->GetName());
+				ReplaceTokenWB(tryResult, "GP1", pMember->GetName());
 				if (PatternFind(line, tryResult))
 					return tryResult;
 			}
